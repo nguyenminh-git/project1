@@ -11,7 +11,7 @@ Web trao đổi – cho tặng đồ cũ miễn phí
 
 ### 1. Clone dự án về máy
 ```sh
-git clone (https://github.com/Truongtruong3804/Nhom_10_project.git)
+git clone https://github.com/Truongtruong3804/Nhom_10_project.git
 cd Nhom_10_project
 ```
 
