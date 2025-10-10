@@ -9,33 +9,34 @@ Web trao đổi – cho tặng đồ cũ miễn phí
 
 ## Các bước cài đặt
 
-### 1. Clone dự án về máy
-```sh
+Cài đặt
 git clone https://github.com/Truongtruong3804/Nhom_10_project.git
 cd Nhom_10_project
-```
 
-### 2. Cài đặt dependencies
-```sh
+# Backend
 cd backend
 npm install
+
+# Frontend (mở terminal khác hoặc quay lại thư mục gốc trước)
 cd ../frontend
 npm install
-```
 
-### 3. Chạy dự án
-Mở 2 terminal:
+Chạy dự án (mở 2 terminal)
 
-- **Terminal 1 (Backend):**
-  ```sh
-  cd backend
-  node server.js
-  ```
-- **Terminal 2 (Frontend):**
-  ```sh
-  cd frontend
-  npm run dev
-  ```
+Terminal 1 – Backend
+
+cd Nhom_10_project/backend
+node server.js
+# Backend chạy tại: http://localhost:5000
+# Dừng server: Ctrl + C
+
+
+Terminal 2 – Frontend
+
+cd Nhom_10_project/frontend
+npm run dev
+# Mặc định: http://localhost:5173
+# Nếu cổng 5173 bận, Vite sẽ hiện cổng khác (5174, 5175...), xem trong terminal.
 
 ### 4. Truy cập web
 - Mở trình duyệt và vào địa chỉ: http://localhost:5173
