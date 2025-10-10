@@ -9,34 +9,33 @@ Web trao đổi – cho tặng đồ cũ miễn phí
 
 ## Các bước cài đặt
 
-Cài đặt
+### 1. Clone dự án về máy
+```sh
 git clone https://github.com/Truongtruong3804/Nhom_10_project.git
 cd Nhom_10_project
+```
 
-# Backend
+### 2. Cài đặt dependencies
+```sh
 cd backend
 npm install
-
-# Frontend (mở terminal khác hoặc quay lại thư mục gốc trước)
 cd ../frontend
 npm install
+```
 
-Chạy dự án (mở 2 terminal)
+### 3. Chạy dự án
+Mở 2 terminal:
 
-Terminal 1 – Backend
-
-cd Nhom_10_project/backend
-node server.js
-# Backend chạy tại: http://localhost:5000
-# Dừng server: Ctrl + C
-
-
-Terminal 2 – Frontend
-
-cd Nhom_10_project/frontend
-npm run dev
-# Mặc định: http://localhost:5173
-# Nếu cổng 5173 bận, Vite sẽ hiện cổng khác (5174, 5175...), xem trong terminal.
+- **Terminal 1 (Backend):**
+  ```sh
+  cd backend
+  node server.js
+  ```
+- **Terminal 2 (Frontend):**
+  ```sh
+  cd frontend
+  npm run dev
+  ```
 
 ### 4. Truy cập web
 - Mở trình duyệt và vào địa chỉ: http://localhost:5173
@@ -46,5 +45,3 @@ npm run dev
 - Backend mặc định chạy ở http://localhost:4000 (có thể thay đổi trong file backend/server.js).
 - Frontend sẽ tự động gọi API tới backend qua các endpoint.
 
----
-Nếu có vấn đề, hãy liên hệ nhóm trưởng hoặc người hướng dẫn để được hỗ trợ.
