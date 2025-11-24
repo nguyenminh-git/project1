@@ -4,12 +4,12 @@ function read() {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw) return JSON.parse(raw)
-  } catch {}
+  } catch { /* empty */ }
   return []
 }
 
 function write(arr) {
-  try { localStorage.setItem(KEY, JSON.stringify(arr)) } catch {}
+  try { localStorage.setItem(KEY, JSON.stringify(arr)) } catch { /* empty */ }
 }
 
 export function getFavorites() {

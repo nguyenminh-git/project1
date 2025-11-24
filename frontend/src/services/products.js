@@ -1,28 +1,55 @@
 import { USE_MOCKS, api } from './apiClient'
 import { mockProducts } from '../mocks/data'
 
-export async function listProducts(params) {
+const delay = (ms) => new Promise((r) => setTimeout(r, ms))
+
+export async function listProducts() {
   if (USE_MOCKS) {
-    await new Promise((r) => setTimeout(r, 300))
+    await delay(300)
     return mockProducts
   }
-  return api.get('/api/products')
+  return api.get('/api/posts')
 }
 
 export async function getProductById(id) {
   if (USE_MOCKS) {
-    await new Promise((r) => setTimeout(r, 150))
+    await delay(150)
     return mockProducts.find((p) => p.id === id)
   }
-  return api.get(`/api/products/${id}`)
+  return api.get(`/api/posts/${id}`)
 }
 
 export async function createProduct(payload) {
   if (USE_MOCKS) {
-    await new Promise((r) => setTimeout(r, 400))
-    const created = { ...payload, id: 'p' + Math.random().toString(36).slice(2), images: payload.images?.filter(Boolean) || [] }
+    await delay(400)
+    const created = {
+      ...payload,
+      id: 'p' + Math.random().toString(36).slice(2),
+      images: payload.images?.filter(Boolean) || [],
+    }
     mockProducts.unshift(created)
     return created
   }
-  return api.post('/api/products', payload)
+
+  // Dùng FormData để upload nhiều file ảnh
+  const formData = new FormData()
+
+  Object.entries(payload).forEach(([key, value]) => {
+    if (key === 'images') {
+      if (Array.isArray(value)) {
+        value.forEach((file) => {
+          if (file instanceof File) {
+            formData.append('images', file)
+          }
+        })
+      }
+      return
+    }
+
+    if (value !== null && value !== undefined) {
+      formData.append(key, value)
+    }
+  })
+
+  return api.postWithFiles('/api/posts', formData)
 }
