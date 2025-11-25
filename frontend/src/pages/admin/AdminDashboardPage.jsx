@@ -5,6 +5,7 @@ import {
   adminUpdateUserStatus,
   adminListPosts,
   adminGetStats,
+  adminDeletePost,
 } from '../../services/adminService'
 
 const tabs = [
@@ -120,12 +121,26 @@ export default function AdminDashboardPage() {
   }
 
   // ---------- Hành động với post (chỉ đổi state phía client) ----------
-  const updatePostStatus = (id, status) => {
+   const updatePostStatus = (id, status) => {
     setPosts((prev) =>
       prev.map((post) =>
         post.id === id ? { ...post, status } : post,
       ),
     )
+  }
+
+  const handleDeletePost = async (post) => {
+    const ok = window.confirm(`Anh có chắc muốn xóa bài "${post.title}"?`)
+    if (!ok) return
+
+    try {
+      await adminDeletePost(post.id)
+      // Xóa khỏi danh sách trên UI
+      setPosts((prev) => prev.filter((p) => p.id !== post.id))
+    } catch (err) {
+      console.error('Delete post error:', err)
+      alert('Không xóa được bài đăng,thử lại sau nhé.')
+    }
   }
 
   // ---------- Thống kê ----------
@@ -341,9 +356,9 @@ export default function AdminDashboardPage() {
                   <button
                     type="button"
                     className="btn-ghost small"
-                    onClick={() => updatePostStatus(post.id, 'pending')}
+                    onClick={() => handleDeletePost(post)}
                   >
-                    Hoàn tác
+                    Xóa bài
                   </button>
                 </div>
               </div>

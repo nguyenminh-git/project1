@@ -16,7 +16,6 @@ export async function register(username, password, email, avatarFile) {
     form.append('avatar', avatarFile) // trùng với uploadAvatar.single('avatar')
   }
 
-  // ❗ DÙNG HÀM NÀY, KHÔNG DÙNG api.post NỮA
   const response = await api.postWithFiles('/api/auth/register', form)
   return response
 }

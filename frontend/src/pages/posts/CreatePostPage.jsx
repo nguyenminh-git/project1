@@ -55,23 +55,41 @@ export default function CreatePostPage() {
     })
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    if (!form.TieuDe.trim()) return
-    setLoading(true)
+ const handleSubmit = async (e) => {
+  e.preventDefault()
+  if (!form.TieuDe.trim()) return
+  setLoading(true)
 
-    try {
-      const created = await createProduct(form)
-      // Dọn dẹp URL previews trước khi điều hướng
-      imagePreviews.forEach((url) => URL.revokeObjectURL(url))
-      navigate(`/posts/${created.IDBaiDang}`)
-    } catch (err) {
-      console.error(err)
-      // TODO: có thể show toast / thông báo lỗi ở đây
-    } finally {
-      setLoading(false)
+  try {
+    const created = await createProduct(form)
+
+    const id =
+      created?.IDBaiDang ??
+      created?.id ??
+      created?.postId ??
+      created?.ID
+
+    if (!id) {
+      console.error('Không lấy được ID bài đăng mới:', created)
+      alert(
+        'Đăng bài có vẻ thành công nhưng không lấy được mã bài. Anh về trang chủ nhé.'
+      )
+      navigate('/') // hoặc /me/posts nếu có
+      return
     }
+
+    // Dọn dẹp URL previews trước khi điều hướng
+    imagePreviews.forEach((url) => URL.revokeObjectURL(url))
+
+    navigate(`/posts/${id}`)
+  } catch (err) {
+    console.error(err)
+    alert('Đăng bài thất bại, anh thử lại giúp em.')
+  } finally {
+    setLoading(false)
   }
+}
+
 
   const handleOpenFileDialog = () => {
     fileInputRef.current?.click()

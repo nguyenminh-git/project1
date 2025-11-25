@@ -143,13 +143,13 @@ r.get('/posts', async (req, res) => {
         b.Gia,
         b.NgayDang,
         b.TrangThai,
-        u.HoTen        AS SellerName,
+        u.TenDangNhap        AS SellerName,
         COUNT(DISTINCT bc.IDBaoCao) AS ReportCount
       FROM dbo.BaiDang b
       JOIN dbo.NguoiDung u ON u.IDNguoiDung = b.IDNguoiDung
       LEFT JOIN dbo.BaoCao bc ON bc.IDBaiDang = b.IDBaiDang
       GROUP BY 
-        b.IDBaiDang, b.TieuDe, b.Gia, b.NgayDang, b.TrangThai, u.HoTen
+        b.IDBaiDang, b.TieuDe, b.Gia, b.NgayDang, b.TrangThai, u.TenDangNhap
       ORDER BY b.NgayDang DESC;
     `);
 

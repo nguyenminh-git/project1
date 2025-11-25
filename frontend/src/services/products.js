@@ -51,5 +51,19 @@ export async function createProduct(payload) {
     }
   })
 
-  return api.postWithFiles('/api/posts', formData)
+  const res = await api.postWithFiles('/api/posts', formData)
+
+  // ✅ Chuẩn hóa lại cho frontend: luôn có thuộc tính IDBaiDang & id
+  const id =
+    res?.IDBaiDang ??
+    res?.id ??
+    res?.postId ??
+    res?.ID
+
+  return {
+    ...res,
+    IDBaiDang: id,
+    id,
+  }
 }
+
