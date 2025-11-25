@@ -20,6 +20,7 @@ import ProfilePage from './pages/ProfilePage'
 import AdminDashboardPage from './pages/admin/AdminDashboardPage'
 import SupportBot from './components/SupportBot'
 import MyPostsPage from './pages/posts/MyPostsPage'
+import VerifyEmailPage from './pages/auth/VerifyEmailPage'  
 
 import UserProfilePage from './pages/users/UserProfilePage'
 
@@ -38,6 +39,7 @@ const routes = {
   '/users/:id': UserProfilePage,
   '/admin': AdminDashboardPage,
   '/my-posts': MyPostsPage,
+  '/verify-email/:email': VerifyEmailPage,
 }
 
 

@@ -1,11 +1,8 @@
 import { useState } from 'react'
-import { useAuth } from '../../context/auth.hooks'
 import { navigate } from '../../router'
 import { register as registerService } from '../../services/authService'
 
 export default function RegisterPage() {
-  const { login } = useAuth()
-
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -55,26 +52,22 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      // 1. GỌI API ĐĂNG KÝ (giữ nguyên logic cũ)
+      // 1. GỌI API ĐĂNG KÝ
       await registerService(username, password, email, avatarFile)
 
-      // TODO: Gửi avatarFile lên backend (nếu backend hỗ trợ)
-      // Ví dụ: uploadAvatar(avatarFile)
-
-      // 2. TỰ ĐỘNG ĐĂNG NHẬP SAU KHI ĐĂNG KÝ THÀNH CÔNG
-      await login(username, password)
-
-      navigate('/')
+      // 2. KHÔNG auto-login nữa, chuyển sang trang xác thực email
+      //    truyền email qua query để trang verify tiện dùng
+      navigate(`/verify-email/${encodeURIComponent(email)}`)
     } catch (e) {
-      console.error('Registration/Auto-login Error:', e)
+      console.error('Registration Error:', e)
 
       let errorMessage
       if (e.status === 409) {
         errorMessage =
           'Tên đăng nhập hoặc Email đã tồn tại. Vui lòng chọn tên khác.'
-      } else if (e.status === 401) {
-        errorMessage =
-          'Đăng ký thành công, nhưng đăng nhập tự động thất bại. Vui lòng đăng nhập thủ công.'
+      } else if (e.data?.errors?.length) {
+        // backend validate lỗi (username / password / email)
+        errorMessage = e.data.errors[0].msg || 'Dữ liệu không hợp lệ.'
       } else {
         errorMessage = 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại.'
       }

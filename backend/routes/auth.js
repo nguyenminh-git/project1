@@ -1,8 +1,9 @@
 import { Router } from 'express'
+import crypto from 'crypto'
 import { query } from '../src/db.js'
 import { signAccess } from '../src/utils/jwt.js'
-import crypto from 'crypto'
 import { uploadAvatar } from '../middleware/uploadAvatar.js'
+import { sendVerificationEmail } from '../src/utils/mailer.js'
 
 const r = Router()
 
@@ -13,7 +14,7 @@ const ITERATIONS = 100000
 const DIGEST = 'sha256'
 
 // =====================================================
-//  ĐĂNG KÝ (có upload avatar, validate thủ công)
+//  ĐĂNG KÝ (có upload avatar + gửi mã xác thực email)
 // =====================================================
 r.post('/register', uploadAvatar, async (req, res) => {
   try {
@@ -22,16 +23,24 @@ r.post('/register', uploadAvatar, async (req, res) => {
     // ===== VALIDATE THỦ CÔNG =====
 
     // 1. Username: ít nhất 4 ký tự
-    if (!username || typeof username !== 'string' || username.trim().length < 4) {
+    if (
+      !username ||
+      typeof username !== 'string' ||
+      username.trim().length < 4
+    ) {
       return res.status(400).json({
-        errors: [{ path: 'username', msg: 'Username phải có ít nhất 4 ký tự' }],
+        errors: [
+          { path: 'username', msg: 'Username phải có ít nhất 4 ký tự' },
+        ],
       })
     }
 
     // 2. Password: ít nhất 6 ký tự
     if (!password || typeof password !== 'string' || password.length < 6) {
       return res.status(400).json({
-        errors: [{ path: 'password', msg: 'Password phải có ít nhất 6 ký tự' }],
+        errors: [
+          { path: 'password', msg: 'Password phải có ít nhất 6 ký tự' },
+        ],
       })
     }
 
@@ -75,10 +84,12 @@ r.post('/register', uploadAvatar, async (req, res) => {
       ? `/uploads/avatars/${req.file.filename}`
       : null
 
-    await query(
+    // ===== INSERT USER + LẤY ID VỪA TẠO =====
+    const insertRs = await query(
       `
       INSERT INTO dbo.NguoiDung 
         (TenDangNhap, MatKhauHash, PasswordSalt, Email, VaiTro, TrangThai, NgayTao, AvatarUrl)
+      OUTPUT INSERTED.IDNguoiDung AS IDNguoiDung
       VALUES 
         (@u, @h, @s, @e, N'user', 1, SYSUTCDATETIME(), @avatar);
       `,
@@ -91,14 +102,61 @@ r.post('/register', uploadAvatar, async (req, res) => {
       },
     )
 
-    return res
-      .status(201)
-      .json({ ok: true, message: 'Registration successful.' })
+    const newUserId = insertRs.recordset?.[0]?.IDNguoiDung
+
+    // Nếu vì lý do gì đó không lấy được ID thì vẫn trả 201
+    if (!newUserId) {
+      console.warn('Không lấy được IDNguoiDung sau khi INSERT')
+      return res.status(201).json({
+        ok: true,
+        message:
+          'Registration successful, but email verification may not be available.',
+      })
+    }
+
+    // ===== TẠO MÃ XÁC THỰC EMAIL =====
+    const verifyCode = Math.floor(100000 + Math.random() * 900000)
+      .toString()
+      .padStart(6, '0')
+
+    const expires = new Date()
+    expires.setMinutes(expires.getMinutes() + 15) // mã có hiệu lực 15 phút
+
+    // Lưu mã vào DB
+    await query(
+      `
+      UPDATE dbo.NguoiDung
+      SET 
+        EmailVerified = 0,
+        EmailVerifyCode = @code,
+        EmailVerifyExpiresAt = @exp
+      WHERE IDNguoiDung = @id
+      `,
+      (reqDb, sql) => {
+        reqDb.input('code', sql.NVarChar(10), verifyCode)
+        reqDb.input('exp', sql.DateTime2, expires)
+        reqDb.input('id', sql.Int, newUserId)
+      },
+    )
+
+    // ===== GỬI EMAIL CHỨA MÃ XÁC THỰC =====
+    try {
+      await sendVerificationEmail(email, verifyCode)
+    } catch (mailErr) {
+      console.error('Send verification email error:', mailErr)
+      // Không fail đăng ký chỉ vì gửi mail lỗi, nhưng log lại
+    }
+
+    return res.status(201).json({
+      ok: true,
+      message:
+        'Registration successful. Please check your email to verify your account.',
+    })
   } catch (err) {
     console.error('Registration error:', err)
-    return res
-      .status(500)
-      .json({ error: 'Internal server error while registering.' })
+    return res.status(500).json({
+      error: 'Internal server error while registering.',
+    })
   }
 })
 
@@ -110,21 +168,21 @@ r.post('/login', async (req, res) => {
   const { username, password } = req.body
 
   const rs = await query(
-  `SELECT TOP 1 
-      IDNguoiDung,
-      TenDangNhap,
-      MatKhauHash,
-      PasswordSalt,
-      VaiTro,
-      TrangThai,
-      Email,
-      AvatarUrl,
-      NgayTao
-   FROM dbo.NguoiDung 
-   WHERE TenDangNhap=@id OR Email=@id`,
-  (rq, sql) => rq.input('id', sql.NVarChar(100), username),
-)
-
+    `SELECT TOP 1 
+        IDNguoiDung,
+        TenDangNhap,
+        MatKhauHash,
+        PasswordSalt,
+        VaiTro,
+        TrangThai,
+        Email,
+        AvatarUrl,
+        NgayTao,
+        EmailVerified
+     FROM dbo.NguoiDung 
+     WHERE TenDangNhap=@id OR Email=@id`,
+    (rq, sql) => rq.input('id', sql.NVarChar(100), username),
+  )
 
   if (!rs.recordset.length) {
     return res.status(401).json({ error: 'Invalid username or password' })
@@ -149,12 +207,19 @@ r.post('/login', async (req, res) => {
       .json({ error: 'Account is currently blocked or inactive.' })
   }
 
-const accessToken = signAccess({
-  uid: u.IDNguoiDung,
-  role: u.VaiTro,
-  name: u.TenDangNhap,
-  // có thể bỏ avatarUrl/joinDate khỏi token, không bắt buộc
-})
+  if (!u.EmailVerified) {
+    return res.status(403).json({
+      error:
+        'Email chưa được xác thực. Vui lòng kiểm tra email để xác thực tài khoản.',
+      code: 'EMAIL_NOT_VERIFIED',
+    })
+  }
+
+  const accessToken = signAccess({
+    uid: u.IDNguoiDung,
+    role: u.VaiTro,
+    name: u.TenDangNhap,
+  })
 
   const refresh = crypto.randomBytes(48).toString('base64url')
   const expiryDays = Number(process.env.REFRESH_EXPIRES_DAYS) || 30
@@ -172,13 +237,13 @@ const accessToken = signAccess({
   )
 
   const user = {
-  id: u.IDNguoiDung,
-  username: u.TenDangNhap,
-  role: u.VaiTro,
-  email: u.Email,        
-  avatarUrl: u.AvatarUrl, 
-  joinDate: u.NgayTao,   
-}
+    id: u.IDNguoiDung,
+    username: u.TenDangNhap,
+    role: u.VaiTro,
+    email: u.Email,
+    avatarUrl: u.AvatarUrl,
+    joinDate: u.NgayTao,
+  }
 
   res.json({ accessToken, refreshToken: refresh, user })
 })
@@ -193,20 +258,20 @@ r.post('/refresh', async (req, res) => {
   }
 
   const rs = await query(
-  `SELECT TOP 1 
-      s.IDNguoiDung, 
-      n.TenDangNhap, 
-      n.VaiTro, 
-      n.TrangThai,
-      n.Email,
-      n.AvatarUrl,
-      n.NgayTao
-   FROM dbo.UserSession s 
-   JOIN dbo.NguoiDung n ON n.IDNguoiDung=s.IDNguoiDung
-   WHERE s.RefreshToken=@rt AND s.ExpiresAt > SYSUTCDATETIME()`,
-  (rq, sql) => rq.input('rt', sql.NVarChar(200), refreshToken),
-)
-
+    `SELECT TOP 1 
+        s.IDNguoiDung, 
+        n.TenDangNhap, 
+        n.VaiTro, 
+        n.TrangThai,
+        n.Email,
+        n.AvatarUrl,
+        n.NgayTao,
+        n.EmailVerified
+     FROM dbo.UserSession s 
+     JOIN dbo.NguoiDung n ON n.IDNguoiDung=s.IDNguoiDung
+     WHERE s.RefreshToken=@rt AND s.ExpiresAt > SYSUTCDATETIME()`,
+    (rq, sql) => rq.input('rt', sql.NVarChar(200), refreshToken),
+  )
 
   if (!rs.recordset.length) {
     return res
@@ -224,23 +289,150 @@ r.post('/refresh', async (req, res) => {
     return res.status(403).json({ error: 'Associated account is inactive.' })
   }
 
+  if (!u.EmailVerified) {
+    return res.status(403).json({
+      error: 'Email chưa được xác thực.',
+      code: 'EMAIL_NOT_VERIFIED',
+    })
+  }
+
   const accessToken = signAccess({
     uid: u.IDNguoiDung,
     role: u.VaiTro,
     name: u.TenDangNhap,
   })
 
-  const user = { 
-  id: u.IDNguoiDung, 
-  username: u.TenDangNhap, 
-  role: u.VaiTro,
-  email: u.Email,
-  avatarUrl: u.AvatarUrl,
-  joinDate: u.NgayTao,
-}
-
+  const user = {
+    id: u.IDNguoiDung,
+    username: u.TenDangNhap,
+    role: u.VaiTro,
+    email: u.Email,
+    avatarUrl: u.AvatarUrl,
+    joinDate: u.NgayTao,
+  }
 
   res.json({ accessToken, user })
+})
+
+// =====================================================
+//  VERIFY EMAIL
+// =====================================================
+r.post('/verify-email', async (req, res) => {
+  const { email, code } = req.body || {}
+
+  if (!email || !code) {
+    return res
+      .status(400)
+      .json({ error: 'Email và mã xác thực là bắt buộc.' })
+  }
+
+  const rs = await query(
+    `SELECT TOP 1 
+        IDNguoiDung,
+        EmailVerified,
+        EmailVerifyCode,
+        EmailVerifyExpiresAt
+     FROM dbo.NguoiDung
+     WHERE Email = @e`,
+    (rq, sql) => {
+      rq.input('e', sql.NVarChar(100), email)
+    },
+  )
+
+  if (!rs.recordset.length) {
+    return res
+      .status(404)
+      .json({ error: 'Không tìm thấy tài khoản với email này.' })
+  }
+
+  const u = rs.recordset[0]
+
+  if (u.EmailVerified) {
+    return res
+      .status(400)
+      .json({ error: 'Email đã được xác thực trước đó.' })
+  }
+
+  const now = new Date()
+
+  if (!u.EmailVerifyCode || u.EmailVerifyCode !== code) {
+    return res.status(400).json({ error: 'Mã xác thực không đúng.' })
+  }
+
+  if (!u.EmailVerifyExpiresAt || now > u.EmailVerifyExpiresAt) {
+    return res.status(400).json({ error: 'Mã xác thực đã hết hạn.' })
+  }
+
+  await query(
+    `UPDATE dbo.NguoiDung
+     SET EmailVerified = 1,
+         EmailVerifyCode = NULL,
+         EmailVerifyExpiresAt = NULL
+     WHERE IDNguoiDung = @id`,
+    (rq, sql) => {
+      rq.input('id', sql.Int, u.IDNguoiDung)
+    },
+  )
+
+  return res.json({
+    ok: true,
+    message: 'Xác thực email thành công. Bạn có thể đăng nhập.',
+  })
+})
+
+// =====================================================
+//  RESEND VERIFY CODE
+// =====================================================
+r.post('/resend-verify-code', async (req, res) => {
+  const { email } = req.body || {}
+  if (!email) {
+    return res.status(400).json({ error: 'Email là bắt buộc.' })
+  }
+
+  const rs = await query(
+    `SELECT TOP 1 IDNguoiDung, EmailVerified 
+     FROM dbo.NguoiDung 
+     WHERE Email=@e`,
+    (rq, sql) => rq.input('e', sql.NVarChar(100), email),
+  )
+
+  if (!rs.recordset.length) {
+    return res
+      .status(404)
+      .json({ error: 'Không tìm thấy tài khoản với email này.' })
+  }
+
+  const u = rs.recordset[0]
+
+  if (u.EmailVerified) {
+    return res.status(400).json({ error: 'Email đã được xác thực.' })
+  }
+
+  const verifyCode = Math.floor(100000 + Math.random() * 900000)
+    .toString()
+    .padStart(6, '0')
+
+  const expires = new Date()
+  expires.setMinutes(expires.getMinutes() + 15)
+
+  await query(
+    `UPDATE dbo.NguoiDung
+     SET EmailVerifyCode=@code, EmailVerifyExpiresAt=@exp
+     WHERE IDNguoiDung=@id`,
+    (rq, sql) => {
+      rq.input('code', sql.NVarChar(10), verifyCode)
+      rq.input('exp', sql.DateTime2, expires)
+      rq.input('id', sql.Int, u.IDNguoiDung)
+    },
+  )
+
+  try {
+    await sendVerificationEmail(email, verifyCode)
+  } catch (err) {
+    console.error('Resend mail error:', err)
+  }
+
+  res.json({ ok: true, message: 'Đã gửi lại mã xác thực.' })
 })
 
 // =====================================================
