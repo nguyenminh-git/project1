@@ -78,7 +78,6 @@ r.get('/', async (req, res) => {
         title: p.title,
         price: Number(p.price) || 0,
         category: p.category,
-        condition: 'Mới 99%',
         images: p.thumb ? [p.thumb] : [],
         seller: p.sellerName,
         location: p.ViTri,
@@ -134,7 +133,6 @@ r.get('/:id', async (req, res) => {
     res.json({
       ...post,
       price: Number(post.price),
-      condition: 'Mới 99%',
       images: imgRs.recordset.map((i) => i.Url),
     })
   } catch (err) {

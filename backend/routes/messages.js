@@ -21,14 +21,23 @@ r.get('/', protect, async (req, res) => {
           IDTinNhan,
           NoiDung,
           ThoiGian,
+          NguoiGui,
+          NguoiNhan,
+          HinhAnh,
+          IDBaiDang,
           IIF(NguoiGui = @me, NguoiNhan, NguoiGui) AS PartnerID
         FROM dbo.TinNhan
         WHERE NguoiGui = @me OR NguoiNhan = @me
       ),
       RankedMessages AS (
         SELECT 
+          IDTinNhan,
           NoiDung,
           ThoiGian,
+          NguoiGui,
+          NguoiNhan,
+          HinhAnh,
+          IDBaiDang,
           PartnerID,
           ROW_NUMBER() OVER (
             PARTITION BY PartnerID
@@ -39,9 +48,17 @@ r.get('/', protect, async (req, res) => {
       SELECT 
         r.PartnerID    AS id,
         u.TenDangNhap  AS name,
-        u.AvatarUrl    AS avatar,   --  dùng đúng cột AvatarUrl
+        u.AvatarUrl    AS avatar,       -- dùng đúng cột AvatarUrl
+
         r.NoiDung      AS lastMessage,
-        r.ThoiGian     AS lastAt    -- tiện alias luôn thời gian tin cuối
+        r.ThoiGian     AS lastAt,
+        r.NguoiGui     AS lastFrom,     -- ai gửi tin cuối
+
+        r.HinhAnh      AS lastImageUrl,
+        CASE WHEN r.HinhAnh  IS NULL THEN 0 ELSE 1 END AS lastHasImage,
+
+        r.IDBaiDang    AS lastPostId,
+        CASE WHEN r.IDBaiDang IS NULL THEN 0 ELSE 1 END AS lastHasPost
 
       FROM RankedMessages r
       JOIN dbo.NguoiDung u ON u.IDNguoiDung = r.PartnerID
@@ -54,15 +71,23 @@ r.get('/', protect, async (req, res) => {
     )
 
     const chats = rs.recordset.map((row) => ({
-    id: row.id,
-    lastMessage: row.lastMessage,
-    lastAt: row.lastAt,
-    withUser: {
-    id: row.id,
-    name: row.name,
-    avatar: row.avatar || null,
-    },
-  }))
+      id: row.id,
+      lastMessage: row.lastMessage,
+      lastAt: row.lastAt,
+      lastFrom: row.lastFrom,
+
+      lastImageUrl: row.lastImageUrl,
+      lastHasImage: !!row.lastHasImage,
+
+      lastPostId: row.lastPostId,
+      lastHasPost: !!row.lastHasPost,
+
+      withUser: {
+        id: row.id,
+        name: row.name,
+        avatar: row.avatar || null,
+      },
+    }))
 
     res.json(chats)
   } catch (err) {
@@ -91,6 +116,7 @@ r.get('/:otherId', protect, async (req, res) => {
         t.NguoiGui,
         t.NguoiNhan,
         t.NoiDung,
+        t.HinhAnh,
         t.ThoiGian,
         t.IDBaiDang,
         b.TieuDe AS PostTitle,
@@ -112,12 +138,13 @@ r.get('/:otherId', protect, async (req, res) => {
       text: r.NoiDung,
       at: r.ThoiGian,
       me: r.NguoiGui === me,
+      imageUrl: r.HinhAnh || null,
       post: r.IDBaiDang
         ? {
             id: r.IDBaiDang,
             title: r.PostTitle,
             price: r.PostPrice,
-            thumb: null, // hiện tại chưa dùng ảnh đại diện bài đăng
+            thumb: null, 
           }
         : null,
     }))
@@ -186,7 +213,7 @@ r.post(
   uploadChat.single('image'),
   async (req, res) => {
     const me = req.user.uid
-    const { to, text } = req.body
+    const { to, text, idBaiDang } = req.body
     const file = req.file
 
     if (!to || !file) {
@@ -194,21 +221,23 @@ r.post(
     }
 
     const imagePath = `/uploads/chat/${file.filename}`
+    const postId = idBaiDang ? Number(idBaiDang) : null
 
     try {
       const rs = await query(
         `
         INSERT INTO dbo.TinNhan
-          (NguoiGui, NguoiNhan, NoiDung, ThoiGian, DaDoc, HinhAnh)
-        OUTPUT INSERTED.IDTinNhan, INSERTED.ThoiGian
+          (NguoiGui, NguoiNhan, NoiDung, ThoiGian, DaDoc, HinhAnh, IDBaiDang)
+        OUTPUT INSERTED.IDTinNhan, INSERTED.ThoiGian, INSERTED.IDBaiDang
         VALUES
-          (@me, @to, @text, SYSUTCDATETIME(), 0, @img);
+          (@me, @to, @text, SYSUTCDATETIME(), 0, @img, @postId);
       `,
         (rq, sql) => {
           rq.input('me', sql.Int, me)
           rq.input('to', sql.Int, Number(to))
           rq.input('text', sql.NVarChar(sql.MAX), text || '')
           rq.input('img', sql.NVarChar(255), imagePath)
+          rq.input('postId', sql.Int, postId)
         },
       )
 
@@ -221,6 +250,7 @@ r.post(
         text: text || '',
         at: row.ThoiGian,
         imageUrl: imagePath,
+        post: row.IDBaiDang ? { id: row.IDBaiDang } : null,
       }
 
       const io = req.app.get('io')

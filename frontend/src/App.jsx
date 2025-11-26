@@ -25,7 +25,6 @@ import VerifyEmailPage from './pages/auth/VerifyEmailPage'
 import UserProfilePage from './pages/users/UserProfilePage'
 
 
-
 const routes = {
   '/': HomePage,
   '/login': LoginPage,
@@ -42,7 +41,13 @@ const routes = {
   '/verify-email/:email': VerifyEmailPage,
 }
 
-
+function buildImageUrl(path) {
+  if (!path) return null
+  if (/^https?:\/\//i.test(path)) return path
+  const base = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+  const p = path.startsWith('/') ? path : '/' + path
+  return base + p
+}
 
 // ====== ICONS ======
 const icons = {
@@ -220,49 +225,6 @@ function Icon({ name }) {
   return icons[name] || null
 }
 
-// 🔹 Chat box nhỏ nổi ở góc (UI)
-function MiniChatBox({ chat, onClose }) {
-  if (!chat) return null
-
-  const openFullChat = () => {
-    navigate(`/chats/${chat.id}`)
-    onClose()
-  }
-
-  return (
-    <div className="mini-chatbox">
-      <div className="mini-chatbox-header">
-        <div className="mini-chatbox-title">
-          <span className="mini-chatbox-avatar">
-            {chat.name?.charAt(0).toUpperCase() || '?'}
-          </span>
-          <div>
-            <div className="mini-chatbox-name">{chat.name}</div>
-            <div className="mini-chatbox-time">{chat.time}</div>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="mini-chatbox-close"
-          onClick={onClose}
-        >
-          ✕
-        </button>
-      </div>
-      <div className="mini-chatbox-body">
-        <p className="mini-chatbox-snippet">{chat.snippet}</p>
-        <button
-          type="button"
-          className="btn btn-light mini-chatbox-button"
-          onClick={openFullChat}
-        >
-          Mở hộp chat
-        </button>
-      </div>
-    </div>
-  )
-}
-
 function NavBar() {
   const { user, logout } = useAuth()
 
@@ -293,7 +255,6 @@ function NavBar() {
   const [openUserMenu, setOpenUserMenu] = useState(false)
   const [openChatMenu, setOpenChatMenu] = useState(false)
   const [openNotifMenu, setOpenNotifMenu] = useState(false)
-  const [activeChatBox, setActiveChatBox] = useState(null)
 
   // Dữ liệu thật: tin nhắn & thông báo
   const [recentMessages, setRecentMessages] = useState([])
@@ -315,13 +276,20 @@ useEffect(() => {
         api.get('/api/notifications'),
       ])
 
-      // /api/messages: [ { id, withUser:{id,name}, lastMessage } ]
-      const mappedChats = (chats || []).map((c) => ({
-        id: c.withUser?.id || c.id,
-        name: c.withUser?.name || 'Người dùng',
-        snippet: c.lastMessage || '',
-        time: 'Gần đây',
-      }))
+      // /api/messages: [ { id, withUser:{id,name,avatarUrl}, lastMessage, lastAt } ]
+      const mappedChats = (chats || []).map((c) => {
+        const partner = c.withUser || {}
+        const avatarRaw =
+          partner.avatarUrl || partner.avatar || partner.AvatarUrl || null
+
+        return {
+          id: partner.id || c.id,
+          name: partner.name || 'Người dùng',
+          avatarUrl: avatarRaw ? buildImageUrl(avatarRaw) : null,
+          snippet: c.lastMessage || '',
+          time: 'Gần đây',
+        }
+      })
 
       const mappedNotifs = (notifs || []).map((n) => ({
         id: n.IDThongBao || n.id,
@@ -341,42 +309,53 @@ useEffect(() => {
 
 
 
+
   // ====== WebSocket: chat:new & notify:new ======
- // ====== WebSocket: cập nhật realtime ======
+// ====== WebSocket: cập nhật realtime ======
 useEffect(() => {
   const socket = getSocket()
-
-  // Nếu chưa có socket (AuthProvider chưa connect) thì thôi
   if (!socket) return
-
-  // Nếu chưa login thì cũng không cần listen
   if (!user) return
 
-  // (AuthProvider đã connect/disconnect socket rồi,
-  // NavBar chỉ việc lắng nghe event)
   const myId = user.id
 
   const handleNewChat = (msg) => {
     // Backend emit: 'message:new'
-    // msg: { id, from, to, text, at, ... }
+    // msg: { from, to, text, ... }
     if (!msg) return
     if (msg.from !== myId && msg.to !== myId) return
 
     const partnerId = msg.from === myId ? msg.to : msg.from
-    const entry = {
-      id: partnerId,
-      name:
-        msg.fromName ||
-        msg.toName ||
-        `Người dùng #${partnerId}`,
-      snippet: msg.text || msg.NoiDung || '',
-      time: 'Vừa xong',
-    }
 
     setRecentMessages((prev) => {
-      const filtered = prev.filter((m) => m.id !== entry.id)
+      // ✅ Tìm xem trước đó đã có cuộc chat với partnerId chưa
+      const existing = prev.find((m) => m.id === partnerId)
+
+      const entry = {
+        // giữ lại mọi thứ cũ nếu có (name, avatarUrl...)
+        ...(existing || {}),
+        id: partnerId,
+        // ưu tiên dùng tên cũ, chỉ fallback sang payload socket nếu chưa có
+        name:
+          existing?.name ||
+          msg.partnerName ||
+          msg.fromUsername ||
+          msg.toUsername ||
+          msg.fromName ||
+          msg.toName ||
+          `Người dùng #${partnerId}`,
+        snippet: msg.text || msg.NoiDung || '',
+        time: 'Vừa xong',
+      }
+
+      const filtered = prev.filter((m) => m.id !== partnerId)
       return [entry, ...filtered].slice(0, 5)
     })
+    if (msg.to === myId) {
+      // Chỉ bật nếu mình là NGƯỜI NHẬN
+      setHasNewMessage(true)
+    }
+
   }
 
   const handleNewNotif = (notif) => {
@@ -388,7 +367,6 @@ useEffect(() => {
     setNotifications((prev) => [entry, ...prev].slice(0, 5))
   }
 
-  // 🟡 CHÚ Ý: tên event phải khớp backend
   socket.on('message:new', handleNewChat)
   socket.on('notify:new', handleNewNotif)
 
@@ -397,6 +375,7 @@ useEffect(() => {
     socket.off('notify:new', handleNewNotif)
   }
 }, [user])
+
 
 
   const submitSearch = () => {
@@ -441,6 +420,10 @@ useEffect(() => {
     setOpenNotifMenu(false)
   }
 
+  // hiệu ứng có tin nhắn mới
+  const [hasNewMessage, setHasNewMessage] = useState(false)
+
+
   const handleLogoutClick = () => {
     const ok = window.confirm('Bạn có chắc chắn muốn đăng xuất không?')
     if (!ok) return
@@ -469,7 +452,14 @@ useEffect(() => {
       navigate('/login')
       return
     }
-    setOpenChatMenu((v) => !v)
+    setOpenChatMenu((v) => {
+      const next = !v
+      if (next) {
+        // mở menu chat ⇒ coi như đã xem tin mới
+        setHasNewMessage(false)
+      }
+      return next
+    })
     setOpenNotifMenu(false)
     setOpenUserMenu(false)
   }
@@ -482,11 +472,6 @@ useEffect(() => {
     setOpenNotifMenu((v) => !v)
     setOpenChatMenu(false)
     setOpenUserMenu(false)
-  }
-
-  const handleOpenMiniChat = (m) => {
-    setActiveChatBox(m)
-    setOpenChatMenu(false)
   }
 
   return (
@@ -543,7 +528,7 @@ useEffect(() => {
                 <div key={item.id} className="nav-user-area">
                   <button
                     type="button"
-                    className="nav-icon-btn"
+                    className={`nav-icon-btn ${hasNewMessage ? 'has-new-message' : ''}`}
                     title={item.label}
                     onClick={toggleChatMenu}
                   >
@@ -557,29 +542,44 @@ useEffect(() => {
                       </div>
                       {/* Tin nhắn gần đây trong menu chat */}
                       <div className="user-menu-list">
-                        {recentMessages.map((m, idx) => (
-                           <button
-                            key={m.id ?? `recent-${idx}`}
-                            type="button"
-                            className="user-menu-item"
-                            onClick={() => handleOpenMiniChat(m)}
-                          >
-                            <div className="user-menu-icon">
-                              <span className="mini-avatar">
-                                {m.name?.charAt(0).toUpperCase() || '?'}
-                              </span>
-                            </div>
-                            <div className="user-menu-content">
-                              <div className="user-menu-row">
-                                <span className="user-menu-title">{m.name}</span>
-                                <span className="user-menu-time">{m.time}</span>
+                        {recentMessages.map((m, idx) => {
+                          const initial = m.name?.charAt(0).toUpperCase() || '?'
+                          return (
+                            <button
+                              key={m.id ?? `recent-${idx}`}
+                              type="button"
+                              className="user-menu-item"
+                              onClick={() => {
+                                if (!m.id) return
+                                navigate(`/chats/${m.id}`)
+                                setOpenChatMenu(false)
+                                setOpenNotifMenu(false)
+                                setOpenUserMenu(false)
+                              }}
+                            >
+                              <div className="user-menu-icon">
+                                {m.avatarUrl ? (
+                                  <img
+                                    src={m.avatarUrl}
+                                    alt={m.name}
+                                    className="mini-avatar-img" // anh có thể style trong CSS
+                                  />
+                                ) : (
+                                  <span className="mini-avatar">{initial}</span>
+                                )}
                               </div>
-                              <div className="user-menu-snippet">
-                                {m.snippet || 'Tin nhắn mới'}
+                              <div className="user-menu-content">
+                                <div className="user-menu-row">
+                                  <span className="user-menu-title">{m.name}</span>
+                                  <span className="user-menu-time">{m.time}</span>
+                                </div>
+                                <div className="user-menu-snippet">
+                                  {m.snippet || 'Tin nhắn mới'}
+                                </div>
                               </div>
-                            </div>
-                          </button>
-                        ))}
+                            </button>
+                          )
+                        })}
                       </div>
 
                       
@@ -700,14 +700,7 @@ useEffect(() => {
                     <span className="user-menu-icon">📝</span>
                     <span>Quản lý bài đăng</span>
                   </button>
-                  <button
-                    type="button"
-                    className="user-menu-item"
-                    onClick={goSettings}
-                  >
-                    <span className="user-menu-icon">⚙️</span>
-                    <span>Cài đặt</span>
-                  </button>
+                  
                   <button
                     type="button"
                     className="user-menu-item user-menu-item-danger"
@@ -743,12 +736,6 @@ useEffect(() => {
           )}
         </nav>
       </div>
-
-      {/* 💬 Chat box nổi */}
-      <MiniChatBox
-        chat={activeChatBox}
-        onClose={() => setActiveChatBox(null)}
-      />
     </header>
   )
 }

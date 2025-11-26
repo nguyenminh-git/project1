@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useAuth } from '../../context/auth.hooks'
 import { listChats } from '../../services/chats'
 import { navigate } from '../../router'
 
@@ -22,9 +23,73 @@ function formatDateTime(value) {
   })
 }
 
+// Xác định tin nhắn cuối cùng có phải do mình gửi không
+function isLastFromMe(chat, myId) {
+  if (!myId || !chat) return false
+
+  const fromRaw =
+    chat.lastFrom ??
+    chat.lastSenderId ??
+    chat.NguoiGuiCuoi ??
+    chat.fromId ??
+    chat.from
+
+  if (fromRaw == null) return false
+  return String(fromRaw) === String(myId)
+}
+
+// Detect loại tin nhắn cuối: 'product' | 'image' | 'text' | 'none'
+function detectLastKind(chat) {
+  if (!chat) return 'none'
+
+  // 1. Có sản phẩm đính kèm không?
+  const hasPost =
+    !!(
+      chat.lastPostId ??
+      chat.postId ??
+      chat.lastPost ??
+      chat.lastHasPost ??
+      chat.hasPost ??
+      chat.IDBaiDangCuoi
+    ) ||
+    chat.lastType === 'post' ||
+    chat.lastKind === 'post' ||
+    chat.lastKind === 'product'
+
+  if (hasPost) return 'product'
+
+  // 2. Có hình ảnh không?
+  const hasImage =
+    !!(
+      chat.lastImage ||
+      chat.lastImageUrl ||
+      chat.imageUrl ||
+      chat.lastHasImage ||
+      chat.hasImage
+    ) ||
+    chat.lastType === 'image' ||
+    chat.lastKind === 'image'
+
+  if (hasImage) return 'image'
+
+  // 3. Nếu có nội dung text
+  const hasText =
+    chat.lastMessage ||
+    chat.lastText ||
+    chat.noiDung ||
+    chat.NoiDung ||
+    chat.previewText
+
+  if (hasText) return 'text'
+
+  return 'none'
+}
+
 export default function ChatsPage() {
   const [chats, setChats] = useState([])
   const [loading, setLoading] = useState(true)
+  const { user } = useAuth()
+  const myId = user?.id ?? null
 
   useEffect(() => {
     let ignore = false
@@ -39,28 +104,30 @@ export default function ChatsPage() {
       }
     }
     load()
-    return () => { ignore = true }
+    return () => {
+      ignore = true
+    }
   }, [])
 
   const openChat = (chat) => {
-  if (!chat) return
+    if (!chat) return
 
-  // backend /api/messages trả: { id, lastMessage, lastAt, withUser:{ id, ... } }
-  const userId =
-    chat.withUser?.id ??
-    chat.partnerId ??      // phòng trường hợp sau này backend đổi tên
-    chat.otherUserId ??
-    chat.id
+    // backend /api/messages trả: { id, lastMessage, lastAt, withUser:{ id, ... } }
+    const userId =
+      chat.withUser?.id ??
+      chat.partnerId ?? // phòng trường hợp sau này backend đổi tên
+      chat.otherUserId ??
+      chat.id
 
-  console.log('openChat item =', chat, ' -> userId =', userId)
+    console.log('openChat item =', chat, ' -> userId =', userId)
 
-  if (!userId) {
-    console.warn('Không xác định được userId cho cuộc chat:', chat)
-    return
+    if (!userId) {
+      console.warn('Không xác định được userId cho cuộc chat:', chat)
+      return
+    }
+
+    navigate(`/chats/${userId}`)
   }
-
-  navigate(`/chats/${userId}`)
-}
 
   if (loading) {
     return <div className="page">Đang tải hộp thư...</div>
@@ -88,15 +155,38 @@ export default function ChatsPage() {
 
             const initial =
               partner.name?.trim()?.charAt(0)?.toUpperCase() || '?'
-            const timeLabel = formatDateTime(c.lastAt || c.lastTime || c.ThoiGian || null)
-            const lastText = c.lastMessage || 'Chưa có tin nhắn'
+            const timeLabel = formatDateTime(
+              c.lastAt || c.lastTime || c.ThoiGian || null,
+            )
+
+            // ===== XỬ LÝ NỘI DUNG HIỂN THỊ DÒNG CUỐI =====
+            const kind = detectLastKind(c)
+            const mine = isLastFromMe(c, myId)
+
+            let rawLast
+            if (kind === 'product') {
+              rawLast = 'Sản phẩm'
+            } else if (kind === 'image') {
+              rawLast = 'Hình ảnh'
+            } else if (kind === 'text') {
+              rawLast =
+                c.lastMessage ||
+                c.lastText ||
+                c.noiDung ||
+                c.NoiDung ||
+                'Chưa có tin nhắn'
+            } else {
+              rawLast = 'Chưa có tin nhắn'
+            }
+
+            const prefix = mine && kind !== 'none' ? 'Bạn: ' : ''
+            const lastText = prefix + rawLast
 
             return (
               <button
                 key={chatId}
                 type="button"
                 className="chat-item"
-                // 👉 truyền CẢ OBJECT, nếu nhỡ tay sửa lại thành c.id thì hàm openChat vẫn xử lý được
                 onClick={() => openChat(c)}
               >
                 <div className="chat-item-avatar">
