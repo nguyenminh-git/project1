@@ -1,210 +1,189 @@
-import { Router } from 'express'
-import crypto from 'crypto'
-import { query } from '../src/db.js'
-import { signAccess } from '../src/utils/jwt.js'
-import { uploadAvatar } from '../middleware/uploadAvatar.js'
-import { sendVerificationEmail } from '../src/utils/mailer.js'
+import { Router } from 'express';
+import crypto from 'crypto';
+import { query } from '../src/db.js';
+import { signAccess } from '../src/utils/jwt.js';
+import { uploadAvatar } from '../middleware/uploadAvatar.js';
+import { sendVerificationEmail } from '../src/utils/mailer.js';
 
-const r = Router()
+const r = Router();
 
-// Định nghĩa độ dài salt và hash theo schema SQL
-const HASH_LENGTH = 64
-const SALT_LENGTH = 32
-const ITERATIONS = 100000
-const DIGEST = 'sha256'
+// Định nghĩa độ dài salt và hash theo schema
+const HASH_LENGTH = 64;
+const SALT_LENGTH = 32;
+const ITERATIONS = 100000;
+const DIGEST = 'sha256';
 
 // =====================================================
-//  ĐĂNG KÝ (có upload avatar + gửi mã xác thực email)
+//  ĐĂNG KÝ (upload avatar + gửi mã xác thực email)
 // =====================================================
 r.post('/register', uploadAvatar, async (req, res) => {
   try {
-    const { username, password, email } = req.body || {}
+    const { username, password, email } = req.body || {};
 
     // ===== VALIDATE THỦ CÔNG =====
-
-    // 1. Username: ít nhất 4 ký tự
-    if (
-      !username ||
-      typeof username !== 'string' ||
-      username.trim().length < 4
-    ) {
+    if (!username || typeof username !== 'string' || username.trim().length < 4) {
       return res.status(400).json({
-        errors: [
-          { path: 'username', msg: 'Username phải có ít nhất 4 ký tự' },
-        ],
-      })
+        errors: [{ path: 'username', msg: 'Username phải có ít nhất 4 ký tự' }],
+      });
     }
 
-    // 2. Password: ít nhất 6 ký tự
     if (!password || typeof password !== 'string' || password.length < 6) {
       return res.status(400).json({
-        errors: [
-          { path: 'password', msg: 'Password phải có ít nhất 6 ký tự' },
-        ],
-      })
+        errors: [{ path: 'password', msg: 'Password phải có ít nhất 6 ký tự' }],
+      });
     }
 
-    // 3. Email: kiểm tra đơn giản
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!email || typeof email !== 'string' || !emailRegex.test(email)) {
       return res.status(400).json({
         errors: [{ path: 'email', msg: 'Email không hợp lệ' }],
-      })
+      });
     }
 
-    const cleanUsername = username.trim()
+    const cleanUsername = username.trim();
 
     // ===== CHECK TRÙNG USERNAME / EMAIL =====
     const checkRs = await query(
-      `SELECT 1 FROM dbo.NguoiDung WHERE TenDangNhap=@u OR Email=@e`,
-      (reqDb, sql) => {
-        reqDb.input('u', sql.NVarChar(50), cleanUsername)
-        reqDb.input('e', sql.NVarChar(100), email)
-      },
-    )
+      `
+      SELECT 1 
+      FROM "NguoiDung" 
+      WHERE "TenDangNhap" = $1 OR "Email" = $2
+      `,
+      [cleanUsername, email]
+    );
 
-    if (checkRs.recordset.length > 0) {
-      return res
-        .status(409)
-        .json({ error: 'Username or Email already exists.' })
+    if (checkRs.rows.length > 0) {
+      return res.status(409).json({ error: 'Username or Email already exists.' });
     }
 
     // ===== HASH PASSWORD =====
-    const salt = crypto.randomBytes(SALT_LENGTH)
+    const salt = crypto.randomBytes(SALT_LENGTH);
     const passHash = crypto.pbkdf2Sync(
       password,
       salt,
       ITERATIONS,
       HASH_LENGTH,
-      DIGEST,
-    )
+      DIGEST
+    );
 
     // ===== HANDLE AVATAR =====
-    const avatarPath = req.file
-      ? `/uploads/avatars/${req.file.filename}`
-      : null
+    const avatarPath = req.file ? `/uploads/avatars/${req.file.filename}` : null;
 
     // ===== INSERT USER + LẤY ID VỪA TẠO =====
     const insertRs = await query(
       `
-      INSERT INTO dbo.NguoiDung 
-        (TenDangNhap, MatKhauHash, PasswordSalt, Email, VaiTro, TrangThai, NgayTao, AvatarUrl)
-      OUTPUT INSERTED.IDNguoiDung AS IDNguoiDung
-      VALUES 
-        (@u, @h, @s, @e, N'user', 1, SYSUTCDATETIME(), @avatar);
+      INSERT INTO "NguoiDung"
+        ("TenDangNhap","MatKhauHash","PasswordSalt","Email","VaiTro","TrangThai","AvatarUrl")
+      VALUES
+        ($1, $2, $3, $4, 'user', TRUE, $5)
+      RETURNING "IDNguoiDung"
       `,
-      (reqDb, sql) => {
-        reqDb.input('u', sql.NVarChar(50), cleanUsername)
-        reqDb.input('h', sql.VarBinary(HASH_LENGTH), passHash)
-        reqDb.input('s', sql.VarBinary(SALT_LENGTH), salt)
-        reqDb.input('e', sql.NVarChar(100), email)
-        reqDb.input('avatar', sql.NVarChar(500), avatarPath)
-      },
-    )
+      [cleanUsername, passHash, salt, email, avatarPath]
+    );
 
-    const newUserId = insertRs.recordset?.[0]?.IDNguoiDung
+    const newUserId = insertRs.rows?.[0]?.IDNguoiDung;
 
-    // Nếu vì lý do gì đó không lấy được ID thì vẫn trả 201
     if (!newUserId) {
-      console.warn('Không lấy được IDNguoiDung sau khi INSERT')
+      console.warn('Không lấy được IDNguoiDung sau khi INSERT');
       return res.status(201).json({
         ok: true,
         message:
           'Registration successful, but email verification may not be available.',
-      })
+      });
     }
 
     // ===== TẠO MÃ XÁC THỰC EMAIL =====
     const verifyCode = Math.floor(100000 + Math.random() * 900000)
       .toString()
-      .padStart(6, '0')
+      .padStart(6, '0');
 
-    const expires = new Date()
-    expires.setMinutes(expires.getMinutes() + 15) // mã có hiệu lực 15 phút
+    const expires = new Date();
+    expires.setMinutes(expires.getMinutes() + 15); // 15 phút
 
-    // Lưu mã vào DB
     await query(
       `
-      UPDATE dbo.NguoiDung
+      UPDATE "NguoiDung"
       SET 
-        EmailVerified = 0,
-        EmailVerifyCode = @code,
-        EmailVerifyExpiresAt = @exp
-      WHERE IDNguoiDung = @id
+        "EmailVerified" = FALSE,
+        "EmailVerifyCode" = $1,
+        "EmailVerifyExpiresAt" = $2
+      WHERE "IDNguoiDung" = $3
       `,
-      (reqDb, sql) => {
-        reqDb.input('code', sql.NVarChar(10), verifyCode)
-        reqDb.input('exp', sql.DateTime2, expires)
-        reqDb.input('id', sql.Int, newUserId)
-      },
-    )
+      [verifyCode, expires, newUserId]
+    );
 
     // ===== GỬI EMAIL CHỨA MÃ XÁC THỰC =====
     try {
-      await sendVerificationEmail(email, verifyCode)
+      await sendVerificationEmail(email, verifyCode);
     } catch (mailErr) {
-      console.error('Send verification email error:', mailErr)
-      // Không fail đăng ký chỉ vì gửi mail lỗi, nhưng log lại
+      console.error('Send verification email error:', mailErr);
     }
 
     return res.status(201).json({
       ok: true,
       message:
         'Registration successful. Please check your email to verify your account.',
-    })
+    });
   } catch (err) {
-    console.error('Registration error:', err)
+    console.error('Registration error:', err);
     return res.status(500).json({
       error: 'Internal server error while registering.',
-    })
+    });
   }
-})
+});
 
 // =====================================================
 //  ĐĂNG NHẬP
 // =====================================================
 r.post('/login', async (req, res) => {
-  // Frontend gửi 'username', dùng cho cả TenDangNhap HOẶC Email
-  const { username, password } = req.body
+  const { username, password } = req.body || {};
 
-  const rs = await query(
-    `SELECT TOP 1 
-        IDNguoiDung,
-        TenDangNhap,
-        MatKhauHash,
-        PasswordSalt,
-        VaiTro,
-        TrangThai,
-        Email,
-        AvatarUrl,
-        NgayTao,
-        EmailVerified
-     FROM dbo.NguoiDung 
-     WHERE TenDangNhap=@id OR Email=@id`,
-    (rq, sql) => rq.input('id', sql.NVarChar(100), username),
-  )
-
-  if (!rs.recordset.length) {
-    return res.status(401).json({ error: 'Invalid username or password' })
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username và password là bắt buộc.' });
   }
 
-  const u = rs.recordset[0]
+  const rs = await query(
+    `
+    SELECT 
+      "IDNguoiDung",
+      "TenDangNhap",
+      "MatKhauHash",
+      "PasswordSalt",
+      "VaiTro",
+      "TrangThai",
+      "Email",
+      "AvatarUrl",
+      "NgayTao",
+      "EmailVerified"
+    FROM "NguoiDung"
+    WHERE "TenDangNhap" = $1 OR "Email" = $1
+    LIMIT 1
+    `,
+    [username]
+  );
+
+  if (!rs.rows.length) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+
+  const u = rs.rows[0];
 
   const cand = crypto.pbkdf2Sync(
     password,
     u.PasswordSalt,
     ITERATIONS,
     HASH_LENGTH,
-    DIGEST,
-  )
+    DIGEST
+  );
+
   if (!crypto.timingSafeEqual(cand, u.MatKhauHash)) {
-    return res.status(401).json({ error: 'Invalid username or password' })
+    return res.status(401).json({ error: 'Invalid username or password' });
   }
 
   if (u.TrangThai === false) {
     return res
       .status(403)
-      .json({ error: 'Account is currently blocked or inactive.' })
+      .json({ error: 'Account is currently blocked or inactive.' });
   }
 
   if (!u.EmailVerified) {
@@ -212,29 +191,28 @@ r.post('/login', async (req, res) => {
       error:
         'Email chưa được xác thực. Vui lòng kiểm tra email để xác thực tài khoản.',
       code: 'EMAIL_NOT_VERIFIED',
-    })
+    });
   }
 
   const accessToken = signAccess({
     uid: u.IDNguoiDung,
     role: u.VaiTro,
     name: u.TenDangNhap,
-  })
+  });
 
-  const refresh = crypto.randomBytes(48).toString('base64url')
-  const expiryDays = Number(process.env.REFRESH_EXPIRES_DAYS) || 30
-  const exp = new Date()
-  exp.setDate(exp.getDate() + expiryDays)
+  const refresh = crypto.randomBytes(48).toString('base64url');
+  const expiryDays = Number(process.env.REFRESH_EXPIRES_DAYS) || 30;
+  const exp = new Date();
+  exp.setDate(exp.getDate() + expiryDays);
 
   await query(
-    `INSERT INTO dbo.UserSession (IDNguoiDung, RefreshToken, IssuedAt, ExpiresAt)
-     VALUES(@id, @rt, SYSUTCDATETIME(), @exp)`,
-    (rq, sql) => {
-      rq.input('id', sql.Int, u.IDNguoiDung)
-      rq.input('rt', sql.NVarChar(200), refresh)
-      rq.input('exp', sql.DateTime2, exp)
-    },
-  )
+    `
+    INSERT INTO "UserSession"
+      ("IDNguoiDung","RefreshToken","IssuedAt","ExpiresAt")
+    VALUES ($1, $2, NOW(), $3)
+    `,
+    [u.IDNguoiDung, refresh, exp]
+  );
 
   const user = {
     id: u.IDNguoiDung,
@@ -243,64 +221,66 @@ r.post('/login', async (req, res) => {
     email: u.Email,
     avatarUrl: u.AvatarUrl,
     joinDate: u.NgayTao,
-  }
+  };
 
-  res.json({ accessToken, refreshToken: refresh, user })
-})
+  res.json({ accessToken, refreshToken: refresh, user });
+});
 
 // =====================================================
 //  REFRESH TOKEN
 // =====================================================
 r.post('/refresh', async (req, res) => {
-  const { refreshToken } = req.body
+  const { refreshToken } = req.body || {};
   if (!refreshToken) {
-    return res.status(400).json({ error: 'Refresh token is required.' })
+    return res.status(400).json({ error: 'Refresh token is required.' });
   }
 
   const rs = await query(
-    `SELECT TOP 1 
-        s.IDNguoiDung, 
-        n.TenDangNhap, 
-        n.VaiTro, 
-        n.TrangThai,
-        n.Email,
-        n.AvatarUrl,
-        n.NgayTao,
-        n.EmailVerified
-     FROM dbo.UserSession s 
-     JOIN dbo.NguoiDung n ON n.IDNguoiDung=s.IDNguoiDung
-     WHERE s.RefreshToken=@rt AND s.ExpiresAt > SYSUTCDATETIME()`,
-    (rq, sql) => rq.input('rt', sql.NVarChar(200), refreshToken),
-  )
+    `
+    SELECT 
+      s."IDNguoiDung",
+      n."TenDangNhap",
+      n."VaiTro",
+      n."TrangThai",
+      n."Email",
+      n."AvatarUrl",
+      n."NgayTao",
+      n."EmailVerified"
+    FROM "UserSession" s
+    JOIN "NguoiDung" n ON n."IDNguoiDung" = s."IDNguoiDung"
+    WHERE s."RefreshToken" = $1
+      AND s."ExpiresAt" > NOW()
+    LIMIT 1
+    `,
+    [refreshToken]
+  );
 
-  if (!rs.recordset.length) {
-    return res
-      .status(401)
-      .json({ error: 'Invalid or expired refresh token' })
+  if (!rs.rows.length) {
+    return res.status(401).json({ error: 'Invalid or expired refresh token' });
   }
 
-  const u = rs.recordset[0]
+  const u = rs.rows[0];
 
   if (u.TrangThai === false) {
     await query(
-      `DELETE FROM dbo.UserSession WHERE RefreshToken=@rt`,
-      (rq, sql) => rq.input('rt', sql.NVarChar(200), refreshToken),
-    )
-    return res.status(403).json({ error: 'Associated account is inactive.' })
+      `DELETE FROM "UserSession" WHERE "RefreshToken" = $1`,
+      [refreshToken]
+    );
+    return res.status(403).json({ error: 'Associated account is inactive.' });
   }
 
   if (!u.EmailVerified) {
     return res.status(403).json({
       error: 'Email chưa được xác thực.',
       code: 'EMAIL_NOT_VERIFIED',
-    })
+    });
   }
 
   const accessToken = signAccess({
     uid: u.IDNguoiDung,
     role: u.VaiTro,
     name: u.TenDangNhap,
-  })
+  });
 
   const user = {
     id: u.IDNguoiDung,
@@ -309,151 +289,158 @@ r.post('/refresh', async (req, res) => {
     email: u.Email,
     avatarUrl: u.AvatarUrl,
     joinDate: u.NgayTao,
-  }
+  };
 
-  res.json({ accessToken, user })
-})
+  res.json({ accessToken, user });
+});
 
 // =====================================================
 //  VERIFY EMAIL
 // =====================================================
 r.post('/verify-email', async (req, res) => {
-  const { email, code } = req.body || {}
+  const { email, code } = req.body || {};
 
   if (!email || !code) {
     return res
       .status(400)
-      .json({ error: 'Email và mã xác thực là bắt buộc.' })
+      .json({ error: 'Email và mã xác thực là bắt buộc.' });
   }
 
   const rs = await query(
-    `SELECT TOP 1 
-        IDNguoiDung,
-        EmailVerified,
-        EmailVerifyCode,
-        EmailVerifyExpiresAt
-     FROM dbo.NguoiDung
-     WHERE Email = @e`,
-    (rq, sql) => {
-      rq.input('e', sql.NVarChar(100), email)
-    },
-  )
+    `
+    SELECT 
+      "IDNguoiDung",
+      "EmailVerified",
+      "EmailVerifyCode",
+      "EmailVerifyExpiresAt"
+    FROM "NguoiDung"
+    WHERE "Email" = $1
+    LIMIT 1
+    `,
+    [email]
+  );
 
-  if (!rs.recordset.length) {
+  if (!rs.rows.length) {
     return res
       .status(404)
-      .json({ error: 'Không tìm thấy tài khoản với email này.' })
+      .json({ error: 'Không tìm thấy tài khoản với email này.' });
   }
 
-  const u = rs.recordset[0]
+  const u = rs.rows[0];
 
   if (u.EmailVerified) {
     return res
       .status(400)
-      .json({ error: 'Email đã được xác thực trước đó.' })
+      .json({ error: 'Email đã được xác thực trước đó.' });
   }
 
-  const now = new Date()
+  const now = new Date();
 
   if (!u.EmailVerifyCode || u.EmailVerifyCode !== code) {
-    return res.status(400).json({ error: 'Mã xác thực không đúng.' })
+    return res.status(400).json({ error: 'Mã xác thực không đúng.' });
   }
 
   if (!u.EmailVerifyExpiresAt || now > u.EmailVerifyExpiresAt) {
-    return res.status(400).json({ error: 'Mã xác thực đã hết hạn.' })
+    return res.status(400).json({ error: 'Mã xác thực đã hết hạn.' });
   }
 
   await query(
-    `UPDATE dbo.NguoiDung
-     SET EmailVerified = 1,
-         EmailVerifyCode = NULL,
-         EmailVerifyExpiresAt = NULL
-     WHERE IDNguoiDung = @id`,
-    (rq, sql) => {
-      rq.input('id', sql.Int, u.IDNguoiDung)
-    },
-  )
+    `
+    UPDATE "NguoiDung"
+    SET 
+      "EmailVerified" = TRUE,
+      "EmailVerifyCode" = NULL,
+      "EmailVerifyExpiresAt" = NULL
+    WHERE "IDNguoiDung" = $1
+    `,
+    [u.IDNguoiDung]
+  );
 
   return res.json({
     ok: true,
     message: 'Xác thực email thành công. Bạn có thể đăng nhập.',
-  })
-})
+  });
+});
 
 // =====================================================
 //  RESEND VERIFY CODE
 // =====================================================
 r.post('/resend-verify-code', async (req, res) => {
-  const { email } = req.body || {}
+  const { email } = req.body || {};
   if (!email) {
-    return res.status(400).json({ error: 'Email là bắt buộc.' })
+    return res.status(400).json({ error: 'Email là bắt buộc.' });
   }
 
   const rs = await query(
-    `SELECT TOP 1 IDNguoiDung, EmailVerified 
-     FROM dbo.NguoiDung 
-     WHERE Email=@e`,
-    (rq, sql) => rq.input('e', sql.NVarChar(100), email),
-  )
+    `
+    SELECT 
+      "IDNguoiDung",
+      "EmailVerified"
+    FROM "NguoiDung"
+    WHERE "Email" = $1
+    LIMIT 1
+    `,
+    [email]
+  );
 
-  if (!rs.recordset.length) {
+  if (!rs.rows.length) {
     return res
       .status(404)
-      .json({ error: 'Không tìm thấy tài khoản với email này.' })
+      .json({ error: 'Không tìm thấy tài khoản với email này.' });
   }
 
-  const u = rs.recordset[0]
+  const u = rs.rows[0];
 
   if (u.EmailVerified) {
-    return res.status(400).json({ error: 'Email đã được xác thực.' })
+    return res.status(400).json({ error: 'Email đã được xác thực.' });
   }
 
   const verifyCode = Math.floor(100000 + Math.random() * 900000)
     .toString()
-    .padStart(6, '0')
+    .padStart(6, '0');
 
-  const expires = new Date()
-  expires.setMinutes(expires.getMinutes() + 15)
+  const expires = new Date();
+  expires.setMinutes(expires.getMinutes() + 15);
 
   await query(
-    `UPDATE dbo.NguoiDung
-     SET EmailVerifyCode=@code, EmailVerifyExpiresAt=@exp
-     WHERE IDNguoiDung=@id`,
-    (rq, sql) => {
-      rq.input('code', sql.NVarChar(10), verifyCode)
-      rq.input('exp', sql.DateTime2, expires)
-      rq.input('id', sql.Int, u.IDNguoiDung)
-    },
-  )
+    `
+    UPDATE "NguoiDung"
+    SET 
+      "EmailVerifyCode" = $1,
+      "EmailVerifyExpiresAt" = $2
+    WHERE "IDNguoiDung" = $3
+    `,
+    [verifyCode, expires, u.IDNguoiDung]
+  );
 
   try {
-    await sendVerificationEmail(email, verifyCode)
+    await sendVerificationEmail(email, verifyCode);
   } catch (err) {
-    console.error('Resend mail error:', err)
+    console.error('Resend mail error:', err);
   }
 
-  res.json({ ok: true, message: 'Đã gửi lại mã xác thực.' })
-})
+  res.json({ ok: true, message: 'Đã gửi lại mã xác thực.' });
+});
 
 // =====================================================
 //  LOGOUT
 // =====================================================
 r.post('/logout', async (req, res) => {
-  const { refreshToken } = req.body
+  const { refreshToken } = req.body || {};
   if (!refreshToken) {
-    return res.status(400).json({ error: 'Refresh token is required.' })
+    return res.status(400).json({ error: 'Refresh token is required.' });
   }
 
   try {
     await query(
-      `DELETE FROM dbo.UserSession WHERE RefreshToken=@rt`,
-      (rq, sql) => rq.input('rt', sql.NVarChar(200), refreshToken),
-    )
-    res.json({ ok: true, message: 'Logged out successfully.' })
+      `DELETE FROM "UserSession" WHERE "RefreshToken" = $1`,
+      [refreshToken]
+    );
+    res.json({ ok: true, message: 'Logged out successfully.' });
   } catch (err) {
-    console.error('Logout error:', err)
-    res.status(500).json({ error: 'Internal server error.' })
+    console.error('Logout error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
   }
-})
+});
 
-export default r
+export default r;

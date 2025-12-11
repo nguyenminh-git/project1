@@ -27,8 +27,6 @@ export async function adminUpdateUserStatus(id, nextActiveBool) {
   })
 }
 
-// ------------------ REPORTS (option, sau này anh xài) ------------------
-
 export async function adminListReports() {
   const rs = await api.get('/api/admin/reports')
   return rs

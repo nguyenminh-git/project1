@@ -4,57 +4,97 @@ import { query } from '../src/db.js';
 
 const r = Router();
 
-// Search & filter
-r.get('/', async (req,res)=>{
-  const { q, cat, min, max, status, near, page=1, size=20 } = req.query;
-  const off = (page-1)*size;
+// ===================================================================
+// 1. TÌM KIẾM & LỌC (SEARCH & FILTER)
+// ===================================================================
+r.get('/', async (req, res) => {
+  const { q, cat, min, max, status, near, page = 1, size = 20 } = req.query;
+  const limit = Number(size);
+  const offset = (Number(page) - 1) * limit;
 
-  const rs = await query(`
-   SELECT b.IDBaiDang, b.TieuDe, b.Gia, b.ViTri, b.TrangThai, b.NgayDang, d.TenDanhMuc
-   FROM dbo.BaiDang b
-   JOIN dbo.DanhMuc d ON d.IDDanhMuc=b.IDDanhMuc
-   WHERE (@q IS NULL OR b.TieuDe LIKE N'%'+@q+'%' OR b.MoTa LIKE N'%'+@q+'%')
-     AND (@cat IS NULL OR b.IDDanhMuc=@cat)
-     AND (@min IS NULL OR b.Gia >= @min)
-     AND (@max IS NULL OR b.Gia <= @max)
-     AND (@st  IS NULL OR b.TrangThai=@st)
-     AND (@near IS NULL OR b.ViTri LIKE N'%'+@near+'%')
-   ORDER BY b.NgayDang DESC
-   OFFSET @off ROWS FETCH NEXT @size ROWS ONLY`,
-   (rq, sql)=>{
-     rq.input('q', sql.NVarChar(255), q ?? null);
-     rq.input('cat', sql.Int, cat ? Number(cat) : null);
-     rq.input('min', sql.Decimal(18,2), min ?? null);
-     rq.input('max', sql.Decimal(18,2), max ?? null);
-     rq.input('st', sql.NVarChar(30), status ?? null);
-     rq.input('near', sql.NVarChar(255), near ?? null);
-     rq.input('off', sql.Int, Number(off));
-     rq.input('size', sql.Int, Number(size));
-   });
-  res.json(rs.recordset);
+  // Chuẩn bị giá trị cho tham số (để null nếu không có giá trị)
+  const pQ = q ? String(q) : null;
+  const pCat = cat ? Number(cat) : null;
+  const pMin = min ? Number(min) : null;
+  const pMax = max ? Number(max) : null;
+  const pStatus = status ? String(status) : null;
+  const pNear = near ? String(near) : null;
+
+  try {
+    // $1=q, $2=cat, $3=min, $4=max, $5=status, $6=near, $7=limit, $8=offset
+    // Dùng ILIKE để tìm kiếm không phân biệt hoa thường
+    const sql = `
+      SELECT 
+        b."IDBaiDang", b."TieuDe", b."Gia", b."ViTri", b."TrangThai", b."NgayDang", d."TenDanhMuc"
+      FROM "BaiDang" b
+      JOIN "DanhMuc" d ON d."IDDanhMuc" = b."IDDanhMuc"
+      WHERE ($1::text IS NULL OR b."TieuDe" ILIKE '%' || $1 || '%' OR b."MoTa" ILIKE '%' || $1 || '%')
+        AND ($2::int IS NULL OR b."IDDanhMuc" = $2)
+        AND ($3::numeric IS NULL OR b."Gia" >= $3)
+        AND ($4::numeric IS NULL OR b."Gia" <= $4)
+        AND ($5::text IS NULL OR b."TrangThai" = $5)
+        AND ($6::text IS NULL OR b."ViTri" ILIKE '%' || $6 || '%')
+      ORDER BY b."NgayDang" DESC
+      LIMIT $7 OFFSET $8
+    `;
+
+    const rs = await query(sql, [pQ, pCat, pMin, pMax, pStatus, pNear, limit, offset]);
+    
+    res.json(rs.rows);
+  } catch (err) {
+    console.error('Error searching posts:', err);
+    res.status(500).json({ error: 'Search failed' });
+  }
 });
 
-// Gợi ý thông minh: lấy 10 bài cùng danh mục/vị trí gần với lịch sử tìm kiếm mới nhất của user
-r.get('/suggestions', auth, async (req,res)=>{
-  // giả sử lưu KEYWORD vào AuditLog.Entity='SEARCH', OldValue=null, NewValue='keyword|near|cat'
-  const last = await query(`
-    SELECT TOP 1 NewValue FROM dbo.AuditLog
-    WHERE IDNguoiDung=@uid AND Entity=N'SEARCH'
-    ORDER BY ThoiGian DESC`, (rq, sql)=>rq.input('uid', sql.Int, req.user.uid));
-  let k=null, near=null, cat=null;
-  if (last.recordset.length){
-    const parts = String(last.recordset[0].NewValue).split('|');
-    k = parts[0]||null; near = parts[1]||null; cat = parts[2] ? Number(parts[2]) : null;
+// ===================================================================
+// 2. GỢI Ý THÔNG MINH (SUGGESTIONS)
+// ===================================================================
+r.get('/suggestions', auth, async (req, res) => {
+  try {
+    // 2.1 Lấy lịch sử tìm kiếm gần nhất từ AuditLog
+    // MSSQL: TOP 1 ...
+    // Postgres: LIMIT 1
+    const logSql = `
+      SELECT "NewValue" FROM "AuditLog"
+      WHERE "IDNguoiDung" = $1 AND "Entity" = 'SEARCH'
+      ORDER BY "ThoiGian" DESC
+      LIMIT 1
+    `;
+    
+    const last = await query(logSql, [req.user.uid]);
+    
+    let k = null, near = null, cat = null;
+
+    if (last.rows.length > 0) {
+      // Giả sử NewValue lưu dạng: "keyword|location|categoryId"
+      const parts = String(last.rows[0].NewValue).split('|');
+      k = parts[0] || null;
+      near = parts[1] || null;
+      cat = parts[2] ? Number(parts[2]) : null;
+    }
+
+    // 2.2 Tìm các bài viết liên quan
+    // $1=cat, $2=near, $3=k
+    const suggestSql = `
+      SELECT 
+        b."IDBaiDang", b."TieuDe", b."Gia", d."TenDanhMuc"
+      FROM "BaiDang" b 
+      JOIN "DanhMuc" d ON d."IDDanhMuc" = b."IDDanhMuc"
+      WHERE ($1::int IS NULL OR b."IDDanhMuc" = $1)
+        AND ($2::text IS NULL OR b."ViTri" ILIKE '%' || $2 || '%')
+        AND ($3::text IS NULL OR b."TieuDe" ILIKE '%' || $3 || '%' OR b."MoTa" ILIKE '%' || $3 || '%')
+      ORDER BY b."NgayCapNhat" DESC
+      LIMIT 10
+    `;
+
+    const rs = await query(suggestSql, [cat, near, k]);
+    
+    res.json(rs.rows);
+  } catch (err) {
+    console.error('Error fetching suggestions:', err);
+    res.status(500).json({ error: 'Suggestion failed' });
   }
-  const rs = await query(`
-   SELECT TOP 10 b.IDBaiDang, b.TieuDe, b.Gia, d.TenDanhMuc
-   FROM dbo.BaiDang b JOIN dbo.DanhMuc d ON d.IDDanhMuc=b.IDDanhMuc
-   WHERE (@cat IS NULL OR b.IDDanhMuc=@cat)
-     AND (@near IS NULL OR b.ViTri LIKE N'%'+@near+'%')
-     AND (@k IS NULL OR b.TieuDe LIKE N'%'+@k+'%' OR b.MoTa LIKE N'%'+@k+'%')
-   ORDER BY b.NgayCapNhat DESC`,
-   (rq, sql)=>{ rq.input('cat', sql.Int, cat); rq.input('near', sql.NVarChar(255), near); rq.input('k', sql.NVarChar(255), k); });
-  res.json(rs.recordset);
 });
 
 export default r;

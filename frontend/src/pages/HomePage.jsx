@@ -183,7 +183,440 @@ export default function HomePage() {
 
   const currentPage = Math.min(page, totalPages)
   const start = (currentPage - 1) * PAGE_SIZE
-  const paged = sorted.slice(start, start + PAGE_SIZE)
+  const paged = [
+    {
+        "id": 30,
+        "title": "Mũ lưỡi trai",
+        "price": 90000,
+        "category": "Thời trang – Phụ kiện",
+        "images": [
+            "/uploads/30muluoitrai.jpg"
+        ],
+        "seller": "linht",
+        "location": "TP.HCM",
+        "status": "ConHang"
+    },
+    {
+        "id": 18,
+        "title": "Xe đạp trẻ em 20\"",
+        "price": 900000,
+        "category": "Xe máy – Xe đạp",
+        "images": [
+            "/uploads/18xedaptreem.jpg"
+        ],
+        "seller": "linht",
+        "location": "TP.HCM",
+        "status": "ConHang"
+    },
+    {
+        "id": 34,
+        "title": "Sổ tay chấm bi A5",
+        "price": 30000,
+        "category": "Sách – Đồ học tập",
+        "images": [
+            "/uploads/34sotaychambi.jpg"
+        ],
+        "seller": "thanhv",
+        "location": "Nghệ An",
+        "status": "ConHang"
+    },
+    {
+        "id": 27,
+        "title": "Túi đeo chéo da",
+        "price": 260000,
+        "category": "Thời trang – Phụ kiện",
+        "images": [
+            "/uploads/27tuideocheoda.jpg"
+        ],
+        "seller": "anhle",
+        "location": "Hải Phòng",
+        "status": "ConHang"
+    },
+    {
+        "id": 31,
+        "title": "Sách Flutter cơ bản",
+        "price": 90000,
+        "category": "Sách – Đồ học tập",
+        "images": [
+            "/uploads/31sachfluttercoban.jpg"
+        ],
+        "seller": "anhle",
+        "location": "Hải Phòng",
+        "status": "ConHang"
+    },
+    {
+        "id": 11,
+        "title": "Quạt điều hòa mini",
+        "price": 610000,
+        "category": "Đồ điện tử – Gia dụng",
+        "images": [
+            "/uploads/11quatdieuhoamini.jpg"
+        ],
+        "seller": "ngocd",
+        "location": "Hà Nội",
+        "status": "ConHang"
+    },
+    {
+        "id": 24,
+        "title": "Tranh treo tường canvas",
+        "price": 450000,
+        "category": "Đồ nội thất – Trang trí",
+        "images": [
+            "/uploads/24tranhtreotuongcanvas.jpg"
+        ],
+        "seller": "ngocd",
+        "location": "Hà Nội",
+        "status": "ConHang"
+    },
+    {
+        "id": 25,
+        "title": "Áo khoác gió nam size M",
+        "price": 150000,
+        "category": "Thời trang – Phụ kiện",
+        "images": [
+            "/uploads/25aokhoacgio.jpg"
+        ],
+        "seller": "minhng",
+        "location": "Hà Nội",
+        "status": "ConHang"
+    },
+    {
+        "id": 33,
+        "title": "Bộ bút highlight 6 màu",
+        "price": 45000,
+        "category": "Sách – Đồ học tập",
+        "images": [
+            "/uploads/33bobutchi6mau.jpg"
+        ],
+        "seller": "quangp",
+        "location": "Bắc Ninh",
+        "status": "ConHang"
+    },
+    {
+        "id": 9,
+        "title": "Loa Bluetooth chống nước",
+        "price": 520000,
+        "category": "Đồ điện tử – Gia dụng",
+        "images": [
+            "/uploads/9loabluetooth.jpg"
+        ],
+        "seller": "anhle",
+        "location": "Hải Phòng",
+        "status": "ConHang"
+    },
+    {
+        "id": 32,
+        "title": "Giáo trình Cấu trúc dữ liệu",
+        "price": 75000,
+        "category": "Sách – Đồ học tập",
+        "images": [
+            "/uploads/32sachcautrucdulieu.jpg"
+        ],
+        "seller": "huongn",
+        "location": "Cần Thơ",
+        "status": "ConHang"
+    },
+    {
+        "id": 16,
+        "title": "Xe đạp road Trinx",
+        "price": 4100000,
+        "category": "Xe máy – Xe đạp",
+        "images": [
+            "/uploads/16xedaproad.jpg"
+        ],
+        "seller": "thanhv",
+        "location": "Nghệ An",
+        "status": "ConHang"
+    },
+    {
+        "id": 6,
+        "title": "Xiaomi Redmi Note 12",
+        "price": 4200000,
+        "category": "Điện thoại – Laptop – Tablet",
+        "images": [
+            "/uploads/6xiaomi-redmi-note-12.jpg"
+        ],
+        "seller": "quangp",
+        "location": "Bắc Ninh",
+        "status": "ConHang"
+    },
+    {
+        "id": 21,
+        "title": "Kệ sách 4 tầng",
+        "price": 520000,
+        "category": "Đồ nội thất – Trang trí",
+        "images": [
+            "/uploads/21kesach4tang.jpg"
+        ],
+        "seller": "huongn",
+        "location": "Cần Thơ",
+        "status": "ConHang"
+    },
+    {
+        "id": 26,
+        "title": "Giày sneaker nữ 38",
+        "price": 320000,
+        "category": "Thời trang – Phụ kiện",
+        "images": [
+            "/uploads/26giaysneakernu.jpg"
+        ],
+        "seller": "trungd",
+        "location": "TP.HCM",
+        "status": "ConHang"
+    },
+    {
+        "id": 5,
+        "title": "iPad 9th 64GB Wi-Fi",
+        "price": 6900000,
+        "category": "Điện thoại – Laptop – Tablet",
+        "images": [
+            "/uploads/5ipad-9-sliver.jpg"
+        ],
+        "seller": "huongn",
+        "location": "Cần Thơ",
+        "status": "ConHang"
+    },
+    {
+        "id": 20,
+        "title": "Ghế văn phòng lưng cao",
+        "price": 650000,
+        "category": "Đồ nội thất – Trang trí",
+        "images": [
+            "/uploads/20ghevanphong.jpg"
+        ],
+        "seller": "anhle",
+        "location": "Hải Phòng",
+        "status": "ConHang"
+    },
+    {
+        "id": 13,
+        "title": "Xe đạp thể thao Giant",
+        "price": 3500000,
+        "category": "Xe máy – Xe đạp",
+        "images": [
+            "/uploads/13xedapthethaogiant.jpg"
+        ],
+        "seller": "minhng",
+        "location": "Hà Nội",
+        "status": "ConHang"
+    },
+    {
+        "id": 36,
+        "title": "Thước eke + compa",
+        "price": 40000,
+        "category": "Sách – Đồ học tập",
+        "images": [
+            "/uploads/36thuoceke.jpg"
+        ],
+        "seller": "linht",
+        "location": "TP.HCM",
+        "status": "ConHang"
+    },
+    {
+        "id": 23,
+        "title": "Tủ giày 3 tầng",
+        "price": 700000,
+        "category": "Đồ nội thất – Trang trí",
+        "images": [
+            "/uploads/23tugiay3tang.jpg"
+        ],
+        "seller": "thanhv",
+        "location": "Nghệ An",
+        "status": "ConHang"
+    },
+    {
+        "id": 8,
+        "title": "Máy hút bụi cầm tay",
+        "price": 780000,
+        "category": "Đồ điện tử – Gia dụng",
+        "images": [
+            "/uploads/8mayhutbuicamtay.jpg"
+        ],
+        "seller": "thanhv",
+        "location": "Nghệ An",
+        "status": "ConHang"
+    },
+    {
+        "id": 3,
+        "title": "Samsung Galaxy Tab S6",
+        "price": 6500000,
+        "category": "Điện thoại – Laptop – Tablet",
+        "images": [
+            "/uploads/3samsung-galaxy-tab-s6.jpg"
+        ],
+        "seller": "trungd",
+        "location": "TP.HCM",
+        "status": "ConHang"
+    },
+    {
+        "id": 14,
+        "title": "Xe đạp MTB Twitter",
+        "price": 2900000,
+        "category": "Xe máy – Xe đạp",
+        "images": [
+            "/uploads/14xedapmtbtwitter.jpg"
+        ],
+        "seller": "trungd",
+        "location": "TP.HCM",
+        "status": "ConHang"
+    },
+    {
+        "id": 29,
+        "title": "Kính mát unisex",
+        "price": 180000,
+        "category": "Thời trang – Phụ kiện",
+        "images": [
+            "/uploads/29kinhmatunisex.jpg"
+        ],
+        "seller": "ngocd",
+        "location": "Hà Nội",
+        "status": "ConHang"
+    },
+    {
+        "id": 10,
+        "title": "Bếp từ đơn Sunhouse",
+        "price": 390000,
+        "category": "Đồ điện tử – Gia dụng",
+        "images": [
+            "/uploads/10beptusungouse.jpg"
+        ],
+        "seller": "huongn",
+        "location": "Cần Thơ",
+        "status": "ConHang"
+    },
+    {
+        "id": 19,
+        "title": "Bàn làm việc gỗ sồi",
+        "price": 1200000,
+        "category": "Đồ nội thất – Trang trí",
+        "images": [
+            "/uploads/19banlamviecgosoi.jpg"
+        ],
+        "seller": "lanp",
+        "location": "Đà Nẵng",
+        "status": "ConHang"
+    },
+    {
+        "id": 35,
+        "title": "Máy tính Casio FX-580VN X",
+        "price": 620000,
+        "category": "Sách – Đồ học tập",
+        "images": [
+            "/uploads/35maytinhcasiofx580.jpg"
+        ],
+        "seller": "ngocd",
+        "location": "Hà Nội",
+        "status": "ConHang"
+    },
+    {
+        "id": 2,
+        "title": "Laptop ThinkPad T14",
+        "price": 14500000,
+        "category": "Điện thoại – Laptop – Tablet",
+        "images": [
+            "/uploads/2lenovo-thinkpad-t14-gen-3-thinkpro-02.jpg"
+        ],
+        "seller": "lanp",
+        "location": "Đà Nẵng",
+        "status": "ConHang"
+    },
+    {
+        "id": 1,
+        "title": "iPhone 12 64GB",
+        "price": 8500000,
+        "category": "Điện thoại – Laptop – Tablet",
+        "images": [
+            "/uploads/1iphone12.jpg"
+        ],
+        "seller": "minhng",
+        "location": "Hà Nội",
+        "status": "ConHang"
+    },
+    {
+        "id": 28,
+        "title": "Đồng hồ Casio F91W",
+        "price": 290000,
+        "category": "Thời trang – Phụ kiện",
+        "images": [
+            "/uploads/28donghocasiof91w.jpg"
+        ],
+        "seller": "huongn",
+        "location": "Cần Thơ",
+        "status": "ConHang"
+    },
+    {
+        "id": 12,
+        "title": "Nồi cơm điện 1.8L",
+        "price": 450000,
+        "category": "Đồ điện tử – Gia dụng",
+        "images": [
+            "/uploads/12noicomdien18l.jpg"
+        ],
+        "seller": "linht",
+        "location": "TP.HCM",
+        "status": "ConHang"
+    },
+    {
+        "id": 7,
+        "title": "Nồi chiên không dầu 3.5L",
+        "price": 950000,
+        "category": "Đồ điện tử – Gia dụng",
+        "images": [
+            "/uploads/7noichienklhongdau.jpg"
+        ],
+        "seller": "lanp",
+        "location": "Đà Nẵng",
+        "status": "DaBan"
+    },
+    {
+        "id": 22,
+        "title": "Đèn cây trang trí",
+        "price": 300000,
+        "category": "Đồ nội thất – Trang trí",
+        "images": [
+            "/uploads/22dencaytrangtri.jpg"
+        ],
+        "seller": "quangp",
+        "location": "Bắc Ninh",
+        "status": "ConHang"
+    },
+    {
+        "id": 4,
+        "title": "Laptop Acer Nitro 5",
+        "price": 16500000,
+        "category": "Điện thoại – Laptop – Tablet",
+        "images": [
+            "/uploads/4acer-nitro-v-15.jpg"
+        ],
+        "seller": "anhle",
+        "location": "Hải Phòng",
+        "status": "DaBan"
+    },
+    {
+        "id": 15,
+        "title": "Xe máy Wave RSX 2017",
+        "price": 11500000,
+        "category": "Xe máy – Xe đạp",
+        "images": [
+            "/uploads/15xemaywaversx.jpg"
+        ],
+        "seller": "quangp",
+        "location": "Bắc Ninh",
+        "status": "DaTraoDoi"
+    },
+    {
+        "id": 17,
+        "title": "Xe máy Vision 2019",
+        "price": 25500000,
+        "category": "Xe máy – Xe đạp",
+        "images": [
+            "/uploads/17xemayvison.jpg"
+        ],
+        "seller": "ngocd",
+        "location": "Hà Nội",
+        "status": "ConHang"
+    }
+]
 
   // Toggle favorite và ép component re-render bằng cách "refresh" state items
   const handleFav = (id) => {

@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename)
 
 dotenv.config({ path: path.join(__dirname, '../.env'), override: true })
 
-console.log('[ENV]', process.env.SQL_SERVER, process.env.SQL_USER)
+console.log('[ENV]', process.env.DB_HOST, process.env.DB_USER)
 
 import express from 'express'
 import cors from 'cors'

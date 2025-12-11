@@ -12,10 +12,11 @@ const __dirname = path.dirname(__filename)
 const r = Router()
 
 // -----------------------------------------------------
-// 📌 MULTER – LƯU ẢNH
+// 📌 MULTER – LƯU ẢNH (GIỮ NGUYÊN)
 // -----------------------------------------------------
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    // Đảm bảo thư mục này tồn tại
     const uploadDir = path.join(__dirname, '..', 'public', 'uploads', 'images')
     cb(null, uploadDir)
   },
@@ -38,42 +39,43 @@ const upload = multer({
 r.get('/', async (req, res) => {
   try {
     const categoryFilter = req.query.category || null
+    const queryParams = []
 
+    // Postgres: Dùng LIMIT thay cho TOP
+    // Subquery: Dùng LIMIT 1 thay cho TOP 1
     let sql = `
-      SELECT TOP 100
-        bd.IDBaiDang AS id,
-        bd.TieuDe AS title,
-        bd.Gia AS price,
-        bd.ViTri,
-        bd.NgayDang,
-        bd.TrangThai,
-        dm.TenDanhMuc AS category,
-        nd.TenDangNhap AS sellerName,
+      SELECT 
+        bd."IDBaiDang" AS id,
+        bd."TieuDe"    AS title,
+        bd."Gia"       AS price,
+        bd."ViTri",
+        bd."NgayDang",
+        bd."TrangThai",
+        dm."TenDanhMuc" AS category,
+        nd."TenDangNhap" AS "sellerName",
         (
-          SELECT TOP 1 Url FROM dbo.HinhAnh 
-          WHERE IDBaiDang = bd.IDBaiDang ORDER BY ThuTu
+          SELECT "Url" FROM "HinhAnh" 
+          WHERE "IDBaiDang" = bd."IDBaiDang" 
+          ORDER BY "ThuTu" ASC
+          LIMIT 1
         ) AS thumb
-      FROM dbo.BaiDang bd
-      JOIN dbo.NguoiDung nd ON nd.IDNguoiDung = bd.IDNguoiDung
-      JOIN dbo.DanhMuc dm ON dm.IDDanhMuc = bd.IDDanhMuc
+      FROM "BaiDang" bd
+      JOIN "NguoiDung" nd ON nd."IDNguoiDung" = bd."IDNguoiDung"
+      JOIN "DanhMuc" dm ON dm."IDDanhMuc" = bd."IDDanhMuc"
       WHERE 1=1
     `
 
-    const params = (rq, sqlType) => {}
-
     if (categoryFilter) {
-      sql += ` AND dm.TenDanhMuc = @cat `
-      params = (rq, sqlType) => {
-        rq.input('cat', sqlType.NVarChar(100), categoryFilter)
-      }
+      queryParams.push(categoryFilter)
+      sql += ` AND dm."TenDanhMuc" = $${queryParams.length} `
     }
 
-    sql += ` ORDER BY bd.NgayDang DESC `
+    sql += ` ORDER BY bd."NgayDang" DESC LIMIT 100 `
 
-    const rs = await query(sql, params)
+    const rs = await query(sql, queryParams)
 
     res.json(
-      rs.recordset.map((p) => ({
+      rs.rows.map((p) => ({
         id: p.id,
         title: p.title,
         price: Number(p.price) || 0,
@@ -98,42 +100,40 @@ r.get('/:id', async (req, res) => {
   const id = Number(req.params.id)
 
   try {
-    const postRs = await query(`
+    const postSql = `
       SELECT 
-        bd.IDBaiDang AS id,
-        bd.TieuDe AS title,
-        bd.MoTa AS description,
-        bd.Gia AS price,
-        bd.ViTri AS location,
-        bd.NgayDang,
-        bd.TrangThai,
-        dm.TenDanhMuc AS category,
-        nd.IDNguoiDung AS sellerId,
-        nd.TenDangNhap AS sellerName
-      FROM dbo.BaiDang bd
-      JOIN dbo.NguoiDung nd ON nd.IDNguoiDung = bd.IDNguoiDung
-      JOIN dbo.DanhMuc dm ON dm.IDDanhMuc = bd.IDDanhMuc
-      WHERE bd.IDBaiDang = @id
-    `, (rq, sql) => {
-      rq.input('id', sql.Int, id)
-    })
+        bd."IDBaiDang"   AS id,
+        bd."TieuDe"      AS title,
+        bd."MoTa"        AS description,
+        bd."Gia"         AS price,
+        bd."ViTri"       AS location,
+        bd."NgayDang",
+        bd."TrangThai",
+        dm."TenDanhMuc"  AS category,
+        nd."IDNguoiDung" AS "sellerId",
+        nd."TenDangNhap" AS "sellerName"
+      FROM "BaiDang" bd
+      JOIN "NguoiDung" nd ON nd."IDNguoiDung" = bd."IDNguoiDung"
+      JOIN "DanhMuc" dm ON dm."IDDanhMuc" = bd."IDDanhMuc"
+      WHERE bd."IDBaiDang" = $1
+    `
+    const postRs = await query(postSql, [id])
 
-    if (postRs.recordset.length === 0) {
+    if (postRs.rows.length === 0) {
       return res.status(404).json({ error: 'Post not found.' })
     }
 
-    const post = postRs.recordset[0]
+    const post = postRs.rows[0]
 
-    const imgRs = await query(`
-      SELECT Url FROM dbo.HinhAnh WHERE IDBaiDang = @id ORDER BY ThuTu
-    `, (rq, sql) => {
-      rq.input('id', sql.Int, id)
-    })
+    const imgSql = `
+      SELECT "Url" FROM "HinhAnh" WHERE "IDBaiDang" = $1 ORDER BY "ThuTu"
+    `
+    const imgRs = await query(imgSql, [id])
 
     res.json({
       ...post,
       price: Number(post.price),
-      images: imgRs.recordset.map((i) => i.Url),
+      images: imgRs.rows.map((i) => i.Url),
     })
   } catch (err) {
     console.error(err)
@@ -164,32 +164,34 @@ r.post(
     try {
       const { TieuDe, MoTa, Gia, ViTri, IDDanhMuc } = req.body
 
-      const rs = await query(`
-        INSERT INTO dbo.BaiDang 
-          (IDNguoiDung, IDDanhMuc, TieuDe, MoTa, Gia, ViTri)
-        VALUES (@uid, @cat, @title, @desc, @price, @loc)
-        SELECT SCOPE_IDENTITY() AS id
-      `, (rq, sql) => {
-        rq.input('uid', sql.Int, req.user.uid)
-        rq.input('cat', sql.Int, IDDanhMuc)
-        rq.input('title', sql.NVarChar(255), TieuDe)
-        rq.input('desc', sql.NVarChar(sql.MAX), MoTa || null)
-        rq.input('price', sql.Decimal(18, 2), Gia || 0)
-        rq.input('loc', sql.NVarChar(255), ViTri || null)
-      })
+      // Postgres: INSERT ... RETURNING "IDBaiDang"
+      const insertPostSql = `
+        INSERT INTO "BaiDang" 
+          ("IDNguoiDung", "IDDanhMuc", "TieuDe", "MoTa", "Gia", "ViTri")
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING "IDBaiDang" AS id
+      `
+      
+      const rs = await query(insertPostSql, [
+        req.user.uid,
+        IDDanhMuc,
+        TieuDe,
+        MoTa || null,
+        Gia || 0,
+        ViTri || null
+      ])
 
-      const postId = rs.recordset[0].id
+      const postId = rs.rows[0].id
 
+      // Lưu hình ảnh
       let order = 1
       for (const f of req.files) {
-        await query(`
-          INSERT INTO dbo.HinhAnh (IDBaiDang, Url, ThuTu)
-          VALUES (@post, @url, @o)
-        `, (rq, sql) => {
-          rq.input('post', sql.Int, postId)
-          rq.input('url', sql.NVarChar(500), `/uploads/images/${f.filename}`)
-          rq.input('o', sql.Int, order++)
-        })
+        const insertImgSql = `
+          INSERT INTO "HinhAnh" ("IDBaiDang", "Url", "ThuTu")
+          VALUES ($1, $2, $3)
+        `
+        const imgUrl = `/uploads/images/${f.filename}`
+        await query(insertImgSql, [postId, imgUrl, order++])
       }
 
       res.status(201).json({ ok: true, id: postId })
@@ -215,18 +217,17 @@ r.post('/:id/status', protect, async (req, res) => {
   }
 
   try {
-    const rs = await query(`
-      UPDATE dbo.BaiDang
-      SET TrangThai = @st, NgayCapNhat = SYSUTCDATETIME()
-      WHERE IDBaiDang = @id AND IDNguoiDung = @uid
-    `, (rq, sql) => {
-      rq.input('id', sql.Int, postId)
-      rq.input('uid', sql.Int, userId)
-      rq.input('st', sql.NVarChar(20), status)
-    })
+    // Postgres: Dùng NOW() thay SYSUTCDATETIME()
+    const sql = `
+      UPDATE "BaiDang"
+      SET "TrangThai" = $1, "NgayCapNhat" = NOW()
+      WHERE "IDBaiDang" = $2 AND "IDNguoiDung" = $3
+    `
+    const rs = await query(sql, [status, postId, userId])
 
-    if (rs.rowsAffected[0] === 0) {
-      return res.status(400).json({ error: 'Not allowed.' })
+    // Postgres: Dùng rowCount
+    if (rs.rowCount === 0) {
+      return res.status(400).json({ error: 'Not allowed or post not found.' })
     }
 
     res.json({ ok: true, status })
@@ -246,28 +247,26 @@ r.post('/:id/mark-sold', protect, async (req, res) => {
   const buyerId = req.body.buyerId || null
 
   try {
-    const rs = await query(`
-      UPDATE dbo.BaiDang
-      SET TrangThai = N'DaBan', NgayCapNhat = SYSUTCDATETIME()
-      WHERE IDBaiDang = @id AND IDNguoiDung = @uid AND TrangThai = N'ConHang'
-    `, (rq, sql) => {
-      rq.input('id', sql.Int, postId)
-      rq.input('uid', sql.Int, userId)
-    })
+    // Postgres không cần N'String' cho unicode
+    const sqlUpdate = `
+      UPDATE "BaiDang"
+      SET "TrangThai" = 'DaBan', "NgayCapNhat" = NOW()
+      WHERE "IDBaiDang" = $1 AND "IDNguoiDung" = $2 AND "TrangThai" = 'ConHang'
+    `
+    const rs = await query(sqlUpdate, [postId, userId])
 
-    if (rs.rowsAffected[0] === 0) {
+    if (rs.rowCount === 0) {
       return res
         .status(400)
         .json({ error: 'Bạn không có quyền hoặc bài đã bán.' })
     }
 
     if (buyerId) {
-      await query(`
-        INSERT INTO dbo.ThongBao(IDNguoiNhan, LoaiThongBao, NoiDung, DaDoc, ThoiGian)
-        VALUES(@to, N'CHOT_BAN', N'Người bán đã chốt đơn cho bạn', 0, SYSUTCDATETIME())
-      `, (rq, sql) => {
-        rq.input('to', sql.Int, buyerId)
-      })
+      const sqlNoti = `
+        INSERT INTO "ThongBao"("IDNguoiNhan", "LoaiThongBao", "NoiDung", "DaDoc", "ThoiGian")
+        VALUES($1, 'CHOT_BAN', 'Người bán đã chốt đơn cho bạn', 0, NOW())
+      `
+      await query(sqlNoti, [buyerId])
     }
 
     res.json({ ok: true })
@@ -286,16 +285,14 @@ r.delete('/:id', protect, async (req, res) => {
   const uid = req.user.uid
 
   try {
-    const rs = await query(`
-      DELETE FROM dbo.BaiDang 
-      WHERE IDBaiDang = @id AND IDNguoiDung = @uid
-    `, (rq, sql) => {
-      rq.input('id', sql.Int, id)
-      rq.input('uid', sql.Int, uid)
-    })
+    const sql = `
+      DELETE FROM "BaiDang" 
+      WHERE "IDBaiDang" = $1 AND "IDNguoiDung" = $2
+    `
+    const rs = await query(sql, [id, uid])
 
-    if (rs.rowsAffected[0] === 0) {
-      return res.status(400).json({ error: 'Not allowed.' })
+    if (rs.rowCount === 0) {
+      return res.status(400).json({ error: 'Not allowed or post not found.' })
     }
 
     res.json({ ok: true })
